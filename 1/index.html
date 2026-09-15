@@ -1,106 +1,116 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Project 1: Becoming Friends with Your Camera — CS 180</title>
-  <meta name="description" content="Perspective, focal length, and the center of projection: a distorted selfie fixed by distance, a compressed facade, and a dolly zoom.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project 1: Images of the Russian Empire — CS 180</title>
+<meta name="description" content="Aligning the three exposures of Prokudin-Gorskii glass plates with normalized cross-correlation, single-scale and through a Gaussian pyramid.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
 </head>
 <body>
 <div class="wrap">
 
-  <nav class="nav">
-    <a href="../index.html">Dennis Vengerov</a>
-    <span>Fall 2026</span>
-  </nav>
+<nav class="nav">
+  <a href="../index.html">Dennis Vengerov</a>
+  <span>Fall 2026</span>
+</nav>
 
-  <header class="masthead">
-    <p class="kicker">Project 1</p>
-    <h1>Becoming friends with your camera</h1>
-    <p class="deck">Through these experiments I found that camera zoom has less impact on perspective than camera position.</p>
-    <p class="byline">Shot on iPhone, September 2026.</p>
-  </header>
+<header class="masthead">
+  <p class="kicker">Project 1</p>
+  <h1>Images of the Russian Empire</h1>
+  <p class="deck">Colorizing the Prokudin-Gorskii Photo Collection</p>
+</header>
 
-  <!-- ---------------------------------------------------------- -->
-  <section class="part" id="selfie">
-    <p class="part-label">Part 1</p>
-    <h2>Selfie: the wrong way vs. the right way</h2>
-    <p class="setup">Same face size, different distances.</p>
+<figure class="wide hero"><img src="./media/pipeline_cathedral.jpg" alt="The cathedral plate, its blue, green and red exposures, the channels stacked as scanned, and the aligned result"><figcaption class="cap"><p class="cap-note">One plate, its three exposures, the channels stacked as scanned, and aligned.</p></figcaption></figure>
 
-    <figure class="pair">
-      <figure>
-        <img src="./media/selfie-close.jpg" alt="Close-up selfie taken at arm's length: nose enlarged, face narrowed, ears hidden." width="1280" height="1600">
-        <div class="cap">
-          <p class="cap-title">Close, no zoom</p>
-          <p class="cap-note">Nose enlarged, ears hidden.</p>
-        </div>
-      </figure>
-      <figure>
-        <img src="./media/selfie-far.jpg" alt="Portrait taken from several feet away and zoomed in: natural proportions, ears visible." width="1280" height="1600">
-        <div class="cap">
-          <p class="cap-title">Far, zoomed in</p>
-          <p class="cap-note">True proportions.</p>
-        </div>
-      </figure>
-    </figure>
-  </section>
+<section class="part" id="ncc">
+  <h2>Normalized cross-correlation</h2>
+  <div class="text">
+    <p>To score a candidate shift I compare the interior of the shifted channel, <var>A</var>, with the interior of blue, <var>B</var>. I subtract each array's mean, <var>a</var> = <var>A</var> − mean(<var>A</var>) and <var>b</var> = <var>B</var> − mean(<var>B</var>), and compute</p>
+    <p class="formula">NCC = Σ <var>a<sub>i</sub></var> <var>b<sub>i</sub></var> / ( √Σ <var>a<sub>i</sub></var>² · √Σ <var>b<sub>i</sub></var>² )</p>
+    <p>where <var>i</var> runs over corresponding pixels. The numerator is the dot product of the two centered arrays and the denominator is the product of their lengths, so the score is the cosine of the angle between them and lies between −1 and 1. Subtracting the mean and dividing by the length make the score ignore differences in overall brightness and contrast between channels. If either array is constant its length is zero, and I return 0 for that candidate so it cannot win.</p>
+    <p>I also implemented the L2 distance,</p>
+    <p class="formula">L2 = √ Σ (<var>a<sub>i</sub></var> − <var>b<sub>i</sub></var>)²</p>
+    <p>where the shift with the smallest distance wins. It selects the same shifts as NCC, within one pixel, on every image except church and emir, where it fails, so all results below use NCC.</p>
+  </div>
+  <figure class="chart"><img src="./media/landscape_cathedral.png" alt="NCC score of every candidate shift for the cathedral red channel, peaking at (3, 12)" loading="lazy"><figcaption class="cap"><p class="cap-note">NCC for every shift of cathedral's red channel in ±15. Darker is higher; the peak is (3, 12).</p></figcaption></figure>
+</section>
 
-  <!-- ---------------------------------------------------------- -->
-  <section class="part" id="architecture">
-    <p class="part-label">Part 2</p>
-    <h2>Architectural perspective compression</h2>
-    <p class="setup">Same house, reversed procedure.</p>
+<section class="part" id="single">
+  <h2>Single-scale alignment</h2>
+  <div class="text">
+    <p>Each scan holds the blue, green and red exposures stacked top to bottom. I convert it to floats between 0 and 1, cut it into three equal-height arrays, keep blue fixed, and search for the shift that moves green, and separately red, onto it. At the original resolution I try every shift from −15 to +15 pixels in both directions, 31 × 31 = 961 candidates per channel. For each candidate I roll the whole moving channel, crop 10 percent from every side of both it and blue, and compute NCC on the two central regions. The margin keeps the plate's black and white borders out of the score, and it also discards the pixels that roll wraps from one edge to the other. The candidate with the highest score is the shift, written (dx, dy) for columns moved right and rows moved down. Each JPG scan takes under a second.</p>
+  </div>
+  <div class="gallery">
+    <figure><img src="./media/raw_cathedral.jpg" alt="cathedral with the three channels stacked as scanned" loading="lazy"><figcaption class="cap"><p class="cap-title">cathedral.jpg</p><p class="cap-note">As scanned</p></figcaption></figure>
+    <figure><img src="./media/raw_monastery.jpg" alt="monastery with the three channels stacked as scanned" loading="lazy"><figcaption class="cap"><p class="cap-title">monastery.jpg</p><p class="cap-note">As scanned</p></figcaption></figure>
+    <figure><img src="./media/raw_tobolsk.jpg" alt="tobolsk with the three channels stacked as scanned" loading="lazy"><figcaption class="cap"><p class="cap-title">tobolsk.jpg</p><p class="cap-note">As scanned</p></figcaption></figure>
+    <figure data-stem="cathedral" data-run="single"><img src="./media/single_cathedral.jpg" alt="cathedral after single-scale alignment"><figcaption class="cap"><p class="cap-title">cathedral.jpg</p><p class="cap-note">Green: (2, 5) · Red: (3, 12)</p></figcaption></figure>
+    <figure data-stem="monastery" data-run="single"><img src="./media/single_monastery.jpg" alt="monastery after single-scale alignment"><figcaption class="cap"><p class="cap-title">monastery.jpg</p><p class="cap-note">Green: (2, −3) · Red: (2, 3)</p></figcaption></figure>
+    <figure data-stem="tobolsk" data-run="single"><img src="./media/single_tobolsk.jpg" alt="tobolsk after single-scale alignment"><figcaption class="cap"><p class="cap-title">tobolsk.jpg</p><p class="cap-note">Green: (3, 3) · Red: (3, 6)</p></figcaption></figure>
+  </div>
+</section>
 
-    <figure class="pair">
-      <figure>
-        <img src="./media/house-far-zoom.jpg" alt="Victorian house photographed from far away with zoom: flattened facade, parallel verticals, neighboring building and power lines crowd in behind." width="1280" height="1600">
-        <div class="cap">
-          <p class="cap-title">Far away, zoomed in</p>
-          <p class="cap-note">Flattened, one depth.</p>
-        </div>
-      </figure>
-      <figure>
-        <img src="./media/house-close-wide.jpg" alt="Same house photographed up close with the wide lens: exaggerated depth, converging verticals, nothing visible behind." width="1280" height="1600">
-        <div class="cap">
-          <p class="cap-title">Up close, no zoom</p>
-          <p class="cap-note">Deep, verticals converge.</p>
-        </div>
-      </figure>
-    </figure>
-  </section>
+<section class="part" id="pyramid">
+  <h2>Pyramid alignment</h2>
+  <div class="text">
+    <p>The TIF scans are about 3200 × 3700 pixels per channel and their displacements exceed 100 pixels, so a single-scale window large enough to contain them would need tens of thousands of candidates, each scored over millions of pixels. Instead I search on a small version of the image and refine on larger ones.</p>
+    <p>To halve an image I blur it with a Gaussian of σ = 1 pixel, built by hand as a seven-tap kernel and applied as two separable one-dimensional passes, then keep every other row and column. The blur removes the detail the smaller grid cannot represent, so it does not turn into false structure. The alignment function halves both channels recursively until the smaller side is below 300 pixels, about 200 pixels for the TIFs, and runs the ±15 single-scale search there. Each level above doubles the shift found below, since one pixel there is two pixels here, and searches ±2 around that estimate, 25 candidates, to correct rounding. The final shift is applied to the original green and red arrays. The same limits, ±15 at the coarsest level and ±2 above, are used for every image, and a TIF takes three to four seconds.</p>
+  </div>
+  <figure class="wide"><img src="./media/alias_wharf.jpg" alt="Wharf at one sixteenth scale: naive subsampling on the left, Gaussian downsampling on the right" loading="lazy"><figcaption class="cap"><p class="cap-note">wharf at 1/16 scale, shown 3× enlarged. Left: every other pixel kept. Right: Gaussian blur, then every other pixel.</p></figcaption></figure>
+  <figure class="wide"><img src="./media/levels_church.jpg" alt="The church blue channel at five pyramid levels, drawn at their true relative sizes" loading="lazy"><figcaption class="cap"><p class="cap-note">The five levels for church at their true relative sizes, 3202 × 3634 down to 201 × 228.</p></figcaption></figure>
+  <div class="pair natural">
+    <figure><img src="./media/raw_harvesters.jpg" alt="harvesters with channels stacked as scanned" loading="lazy"><figcaption class="cap"><p class="cap-title">harvesters.tif</p><p class="cap-note">As scanned; red is 124 rows off</p></figcaption></figure>
+    <figure><img src="./media/pyr_harvesters.jpg" alt="harvesters after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">harvesters.tif</p><p class="cap-note">Aligned · Green: (17, 60) · Red: (13, 124)</p></figcaption></figure>
+  </div>
+  <div class="gallery">
+    <figure data-stem="cathedral"><img src="./media/pyr_cathedral.jpg" alt="cathedral after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">cathedral.jpg</p><p class="cap-note">Green: (2, 5) · Red: (3, 12)</p></figcaption></figure>
+    <figure data-stem="church"><img src="./media/pyr_church.jpg" alt="church after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">church.tif</p><p class="cap-note">Green: (4, 25) · Red: (−4, 58)</p></figcaption></figure>
+    <figure data-stem="harvesters"><img src="./media/pyr_harvesters.jpg" alt="harvesters after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">harvesters.tif</p><p class="cap-note">Green: (17, 60) · Red: (13, 124)</p></figcaption></figure>
+    <figure data-stem="icon"><img src="./media/pyr_icon.jpg" alt="icon after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">icon.tif</p><p class="cap-note">Green: (17, 41) · Red: (23, 89)</p></figcaption></figure>
+    <figure data-stem="ilemselga"><img src="./media/pyr_ilemselga.jpg" alt="ilemselga after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">ilemselga.tif</p><p class="cap-note">Green: (7, 40) · Red: (11, 130)</p></figcaption></figure>
+    <figure data-stem="melons"><img src="./media/pyr_melons.jpg" alt="melons after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">melons.tif</p><p class="cap-note">Green: (11, 82) · Red: (13, 178)</p></figcaption></figure>
+    <figure data-stem="monastery"><img src="./media/pyr_monastery.jpg" alt="monastery after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">monastery.jpg</p><p class="cap-note">Green: (2, −3) · Red: (2, 3)</p></figcaption></figure>
+    <figure data-stem="religous_painting"><img src="./media/pyr_religous_painting.jpg" alt="religious painting after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">religous_painting.tif</p><p class="cap-note">Green: (3, 28) · Red: (7, 68)</p></figcaption></figure>
+    <figure data-stem="self_portrait"><img src="./media/pyr_self_portrait.jpg" alt="self portrait after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">self_portrait.tif</p><p class="cap-note">Green: (29, 79) · Red: (37, 176)</p></figcaption></figure>
+    <figure data-stem="siren"><img src="./media/pyr_siren.jpg" alt="siren after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">siren.tif</p><p class="cap-note">Green: (−6, 49) · Red: (−25, 96)</p></figcaption></figure>
+    <figure data-stem="three_generations"><img src="./media/pyr_three_generations.jpg" alt="three generations after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">three_generations.tif</p><p class="cap-note">Green: (14, 53) · Red: (11, 112)</p></figcaption></figure>
+    <figure data-stem="tobolsk"><img src="./media/pyr_tobolsk.jpg" alt="tobolsk after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">tobolsk.jpg</p><p class="cap-note">Green: (3, 3) · Red: (3, 6)</p></figcaption></figure>
+    <figure data-stem="wharf"><img src="./media/pyr_wharf.jpg" alt="wharf after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">wharf.tif</p><p class="cap-note">Green: (−7, 15) · Red: (−16, 83)</p></figcaption></figure>
+  </div>
+</section>
 
-  <!-- ---------------------------------------------------------- -->
-  <section class="part" id="dolly-zoom">
-    <p class="part-label">Part 3</p>
-    <h2>The dolly zoom</h2>
-    <p class="setup">Six stills: step back, zoom in.</p>
+<section class="part" id="extras">
+  <h2>Additional images</h2>
+  <div class="text">
+    <p>I ran the same algorithm with the same parameters on four more plates from the Library of Congress collection.</p>
+  </div>
+  <div class="gallery">
+    <figure data-stem="beggars"><img src="./media/pyr_beggars.jpg" alt="Beggars, Samarkand, after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">Beggars, Samarkand</p><p class="cap-note">Green: (−7, 7) · Red: (−2, 86) · <a href="https://www.loc.gov/item/2018680243/">LC record</a></p></figcaption></figure>
+    <figure data-stem="dagestan_women"><img src="./media/pyr_dagestan_women.jpg" alt="Types of Dagestan, women on a carpet, after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">Types of Dagestan, women on a carpet</p><p class="cap-note">Green: (1, 16) · Red: (−1, 104) · <a href="https://www.loc.gov/item/2018679952/">LC record</a></p></figcaption></figure>
+    <figure data-stem="dagestan_man"><img src="./media/pyr_dagestan_man.jpg" alt="Types of Dagestan, man among rocks, after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">Types of Dagestan, man among rocks</p><p class="cap-note">Green: (10, 30) · Red: (17, 131) · <a href="https://www.loc.gov/item/2018679950/">LC record</a></p></figcaption></figure>
+    <figure data-stem="sart_fields"><img src="./media/pyr_sart_fields.jpg" alt="Sart fields, Samarkand, after pyramid alignment" loading="lazy"><figcaption class="cap"><p class="cap-title">Sart fields, Samarkand</p><p class="cap-note">Green: (−3, 67) · Red: (−15, 139) · <a href="https://www.loc.gov/item/2018680109/">LC record</a></p></figcaption></figure>
+  </div>
+</section>
 
-    <figure class="motion">
-      <figure class="gif">
-        <img src="./media/dolly.gif" alt="Animated dolly zoom: a plush succulent stays the same size while the wall and window behind it close in." width="640" height="800">
-        <div class="cap">
-          <p class="cap-title">Dolly zoom, looping</p>
-          <p class="cap-note">Pot stays, room moves.</p>
-        </div>
-      </figure>
-      <div class="strip">
-        <figure><img src="./media/dolly-01.jpg" alt="Dolly zoom frame 1: closest and widest." width="1200" height="1500"><figcaption>1, closest</figcaption></figure>
-        <figure><img src="./media/dolly-02.jpg" alt="Dolly zoom frame 2." width="1200" height="1500"><figcaption>2</figcaption></figure>
-        <figure><img src="./media/dolly-03.jpg" alt="Dolly zoom frame 3." width="1200" height="1500"><figcaption>3</figcaption></figure>
-        <figure><img src="./media/dolly-04.jpg" alt="Dolly zoom frame 4." width="1200" height="1500"><figcaption>4</figcaption></figure>
-        <figure><img src="./media/dolly-05.jpg" alt="Dolly zoom frame 5." width="1200" height="1500"><figcaption>5</figcaption></figure>
-        <figure><img src="./media/dolly-06.jpg" alt="Dolly zoom frame 6: farthest and most zoomed." width="1200" height="1500"><figcaption>6, farthest</figcaption></figure>
-      </div>
-    </figure>
-  </section>
+<section class="part" id="failure">
+  <h2>Alignment failure</h2>
+  <div class="text">
+    <p>Emir's red channel is misaligned. The algorithm selects (24, 49) for green and (−205, 141) for red, which leaves a red copy of the figure to the left of him. The Emir's robe is bright in the blue exposure and dark in the red one, and the doors behind him do the opposite. Mean subtraction and normalization handle a global difference in brightness or contrast, but not a pattern that is inverted region by region, so NCC on raw pixels scores a wrong overlap higher than the correct one at the coarsest level, and the ±2 refinement at each larger level cannot recover from it. L2 lands closer, at (57, 103), but is still visibly off. Aligning on gradients instead of intensities would avoid the problem.</p>
+  </div>
+  <figure class="wide"><img src="./media/channels_emir.jpg" alt="The blue, green and red exposures of the emir plate; the robe is bright in blue and dark in red" loading="lazy"><figcaption class="cap"><p class="cap-note">emir: blue, green and red exposures. The robe inverts between blue and red.</p></figcaption></figure>
+  <div class="pair natural">
+    <figure data-stem="emir"><img src="./media/pyr_emir.jpg" alt="emir aligned with NCC, red channel misaligned" loading="lazy"><figcaption class="cap"><p class="cap-title">emir.tif, NCC</p><p class="cap-note">Green: (24, 49) · Red: (−205, 141)</p></figcaption></figure>
+    <figure><img src="./media/pyr_emir_ssd.jpg" alt="emir aligned with L2, close but visibly off" loading="lazy"><figcaption class="cap"><p class="cap-title">emir.tif, L2</p><p class="cap-note">Green: (24, 49) · Red: (57, 103)</p></figcaption></figure>
+  </div>
+</section>
 
-  <footer>
-    <a href="../index.html">All projects</a>
-  </footer>
+<footer>
+  <p>Source plates: Prokudin-Gorskii collection, Library of Congress, Prints and Photographs Division.</p>
+</footer>
 
 </div>
 </body>
