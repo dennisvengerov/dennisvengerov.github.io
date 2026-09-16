@@ -24,17 +24,28 @@
   <p class="deck">Colorizing the Prokudin-Gorskii Photo Collection</p>
 </header>
 
-<figure class="wide hero"><img src="./media/pipeline_cathedral.jpg" alt="The cathedral plate, its blue, green and red exposures, the channels stacked as scanned, and the aligned result"><figcaption class="cap"><p class="cap-note">One plate, its three exposures, the channels stacked as scanned, and aligned.</p></figcaption></figure>
+<section class="part" id="overview">
+  <h2>Overview</h2>
+  <div class="text">
+    <p>The goal of this project is to colorize images from the Russian Empire. They are received as a plate of 3 channels, a single 2D array of intensity values. I convert this to values between 0 and 1 to standardize between 8-bit and 16-bit scans. My goal is to separate this array (<code>load_plate</code> and <code>split_channels</code>, 3 equal parts) into the R, G and B matrices. Then I need to align the 3 to colorize it, as every color is just an (R, G, B) tuple. An intuitive reader may say: do we just stack the 3 arrays and we are done? Well, it is trickier than it seems.</p>
+  </div>
+  <figure class="medium"><img src="./media/raw_church.jpg" alt="church with the three channels stacked without alignment, showing separated colour copies" loading="lazy"><figcaption class="cap"><p class="cap-note">church.tif, the three channels stacked as scanned.</p></figcaption></figure>
+  <div class="text">
+    <p>The reason is that slight shifts in the scenery, the mechanism of capture, and so on caused the sequential captures of the picture to be slightly misaligned. Since the content is pretty much identical, our goal in this project is to find where they are misaligned and then compose the correctly colorized image.</p>
+  </div>
+  <figure class="wide"><img src="./media/pipeline_cathedral.jpg" alt="The cathedral plate, its blue, green and red exposures, the channels stacked as scanned, and the aligned result"><figcaption class="cap"><p class="cap-note">One plate, its three exposures, the channels stacked as scanned, and aligned.</p></figcaption></figure>
+</section>
 
 <section class="part" id="ncc">
-  <h2>Normalized cross-correlation</h2>
+  <h2>Scoring a shift: L2 and NCC</h2>
   <div class="text">
-    <p>To score a candidate shift I compare the interior of the shifted channel, <var>A</var>, with the interior of blue, <var>B</var>. I subtract each array's mean, <var>a</var> = <var>A</var> − mean(<var>A</var>) and <var>b</var> = <var>B</var> − mean(<var>B</var>), and compute</p>
-    <p class="formula">NCC = Σ <var>a<sub>i</sub></var> <var>b<sub>i</sub></var> / ( √Σ <var>a<sub>i</sub></var>² · √Σ <var>b<sub>i</sub></var>² )</p>
-    <p>where <var>i</var> runs over corresponding pixels. The numerator is the dot product of the two centered arrays and the denominator is the product of their lengths, so the score is the cosine of the angle between them and lies between −1 and 1. Subtracting the mean and dividing by the length make the score ignore differences in overall brightness and contrast between channels. If either array is constant its length is zero, and I return 0 for that candidate so it cannot win.</p>
-    <p>I also implemented the L2 distance,</p>
+    <p>We can test multiple candidate shifts and see which one is best. How do we score?</p>
+    <p>The simple way to do so is to compute the L2 distance between the candidate and the reference:</p>
     <p class="formula">L2 = √ Σ (<var>a<sub>i</sub></var> − <var>b<sub>i</sub></var>)²</p>
-    <p>where the shift with the smallest distance wins. It selects the same shifts as NCC, within one pixel, on every image except church and emir, where it fails, so all results below use NCC.</p>
+    <p>where the shift with the smallest distance wins. It is a rudimentary method, but it fails on church and emir, so that is why we use NCC, described below. L2 is good at absolute differences but misses underlying structure. If the lighting changes slightly, the L2 distance becomes huge while the NCC score barely changes.</p>
+    <p>To score a candidate shift with NCC, I compare the interior of the shifted channel, <var>A</var>, with the interior of blue, <var>B</var>. I subtract each array's mean, <var>a</var> = <var>A</var> − mean(<var>A</var>) and <var>b</var> = <var>B</var> − mean(<var>B</var>), and compute</p>
+    <p class="formula">NCC = Σ <var>a<sub>i</sub></var> <var>b<sub>i</sub></var> / ( √Σ <var>a<sub>i</sub></var>² · √Σ <var>b<sub>i</sub></var>² )</p>
+    <p>where <var>i</var> runs over the corresponding pixels. NCC computes the dot product of the two centered arrays divided by the product of their lengths, which gives a cosine similarity value between −1 and 1. Subtracting the mean and dividing by the length is what makes the score ignore differences in brightness and contrast between channels, and instead focus on how genuinely similar the two patterns are, the angle between them. If either array is constant, zero is returned so it cannot win.</p>
   </div>
   <figure class="chart"><img src="./media/landscape_cathedral.png" alt="NCC score of every candidate shift for the cathedral red channel, peaking at (3, 12)" loading="lazy"><figcaption class="cap"><p class="cap-note">NCC for every shift of cathedral's red channel in ±15. Darker is higher; the peak is (3, 12).</p></figcaption></figure>
 </section>
@@ -42,7 +53,7 @@
 <section class="part" id="single">
   <h2>Single-scale alignment</h2>
   <div class="text">
-    <p>Each scan holds the blue, green and red exposures stacked top to bottom. I convert it to floats between 0 and 1, cut it into three equal-height arrays, keep blue fixed, and search for the shift that moves green, and separately red, onto it. At the original resolution I try every shift from −15 to +15 pixels in both directions, 31 × 31 = 961 candidates per channel. For each candidate I roll the whole moving channel, crop 10 percent from every side of both it and blue, and compute NCC on the two central regions. The margin keeps the plate's black and white borders out of the score, and it also discards the pixels that roll wraps from one edge to the other. The candidate with the highest score is the shift, written (dx, dy) for columns moved right and rows moved down. Each JPG scan takes under a second.</p>
+    <p>I first try to find the shift by trying every shift from −15 to +15 pixels from the center, producing 961 candidates per channel. For each candidate I roll the whole moving channel, crop 10 percent from every side of both it and blue, and compute NCC on the two central regions. The margin keeps the plate's black and white borders out of the score, and it also discards the pixels that roll wraps from one edge to the other. The candidate with the highest score is the shift, written (dx, dy) for columns moved right and rows moved down. Each JPG scan takes under a second, as they are small. As seen below, this works well.</p>
   </div>
   <div class="gallery">
     <figure><img src="./media/raw_cathedral.jpg" alt="cathedral with the three channels stacked as scanned" loading="lazy"><figcaption class="cap"><p class="cap-title">cathedral.jpg</p><p class="cap-note">As scanned</p></figcaption></figure>
@@ -57,8 +68,9 @@
 <section class="part" id="pyramid">
   <h2>Pyramid alignment</h2>
   <div class="text">
-    <p>The TIF scans are about 3200 × 3700 pixels per channel and their displacements exceed 100 pixels, so a single-scale window large enough to contain them would need tens of thousands of candidates, each scored over millions of pixels. Instead I search on a small version of the image and refine on larger ones.</p>
-    <p>To halve an image I blur it with a Gaussian of σ = 1 pixel, built by hand as a seven-tap kernel and applied as two separable one-dimensional passes, then keep every other row and column. The blur removes the detail the smaller grid cannot represent, so it does not turn into false structure. The alignment function halves both channels recursively until the smaller side is below 300 pixels, about 200 pixels for the TIFs, and runs the ±15 single-scale search there. Each level above doubles the shift found below, since one pixel there is two pixels here, and searches ±2 around that estimate, 25 candidates, to correct rounding. The final shift is applied to the original green and red arrays. The same limits, ±15 at the coarsest level and ±2 above, are used for every image, and a TIF takes three to four seconds.</p>
+    <p>Not all images are small JPGs. The TIF scans are about 3200 × 3700 pixels per channel and their displacements exceed 100 pixels, so a single-scale window large enough to contain them would need tens of thousands of candidates, each scored over millions of pixels. This is computationally very expensive and takes too long to brute force. Instead, we can use a recursion trick to find the best shift.</p>
+    <p>We can search smaller versions of the images and refine the location on larger ones. You may ask: a smaller image? But we want to align our actual image. Well, if we halve the rows and columns of our image but still find a way for the pixels to represent it, we can process the structure with a quarter of the compute. However, we cannot just cut half the rows and columns: an array [0, 1, 0, 1] becomes [0, 0] and we lose all the information. Thus, we need to encode neighboring values somehow, and only then can we make the image smaller. We can blur with a Gaussian filter (σ = 1 pixel; our <code>gaussian_kernel_1d</code> function, leveraged by the <code>blur</code> function), which weights each pixel using a Gaussian distribution: the center pixel gets the most weight, and pixels farther away exponentially less (clipped at 3σ, where the weight is very low). Now, with the pattern encoded in all pixels, we can halve the rows and columns (the <code>downsample</code> function).</p>
+    <p>OK, so we have learned how to reduce an image while keeping its structure. Now we use a simple recursive approach, our <code>align_pyramid</code> function. The base case is the smallest image, under 300 pixels on its smaller side; we run the coarse ±15 window on it as before, in less than a second. Once we find the rough spot of where the true shift is, we go up the call stack and check the next bigger image (4× the size). However, the search space is much smaller, as the doubled estimate is off by at most a couple of pixels, so we only need a ±2 window (super fast). We keep moving up and find the shift on the giant TIF image with this super fast logarithmic method instead of a quadratic one. Fire!! Results below.</p>
   </div>
   <figure class="wide"><img src="./media/alias_wharf.jpg" alt="Wharf at one sixteenth scale: naive subsampling on the left, Gaussian downsampling on the right" loading="lazy"><figcaption class="cap"><p class="cap-note">wharf at 1/16 scale, shown 3× enlarged. Left: every other pixel kept. Right: Gaussian blur, then every other pixel.</p></figcaption></figure>
   <figure class="wide"><img src="./media/levels_church.jpg" alt="The church blue channel at five pyramid levels, drawn at their true relative sizes" loading="lazy"><figcaption class="cap"><p class="cap-note">The five levels for church at their true relative sizes, 3202 × 3634 down to 201 × 228.</p></figcaption></figure>
@@ -99,13 +111,17 @@
 <section class="part" id="failure">
   <h2>Alignment failure</h2>
   <div class="text">
-    <p>Emir's red channel is misaligned. The algorithm selects (24, 49) for green and (−205, 141) for red, which leaves a red copy of the figure to the left of him. The Emir's robe is bright in the blue exposure and dark in the red one, and the doors behind him do the opposite. Mean subtraction and normalization handle a global difference in brightness or contrast, but not a pattern that is inverted region by region, so NCC on raw pixels scores a wrong overlap higher than the correct one at the coarsest level, and the ±2 refinement at each larger level cannot recover from it. L2 lands closer, at (57, 103), but is still visibly off. Aligning on gradients instead of intensities would avoid the problem.</p>
+    <p>However, this algorithm is not perfect. Look at Emir's picture below. His red channel is misaligned: the algorithm selects (24, 49) for green and (−205, 141) for red, which leaves a red copy of the figure to the left of him. The Emir's robe is bright in the blue exposure and dark in the red one, and the doors behind him do the opposite. Mean subtraction and normalization handle a global difference in brightness or contrast, but this pattern is inverted region by region, so NCC scores the wrong overlap higher than the correct one at the coarsest level, and the recursion's ±2 refinements do not recover it. L2 lands closer, at (57, 103), but is still visibly off. Aligning on gradients instead of intensities would avoid the problem.</p>
   </div>
   <figure class="wide"><img src="./media/channels_emir.jpg" alt="The blue, green and red exposures of the emir plate; the robe is bright in blue and dark in red" loading="lazy"><figcaption class="cap"><p class="cap-note">emir: blue, green and red exposures. The robe inverts between blue and red.</p></figcaption></figure>
   <div class="pair natural">
     <figure data-stem="emir"><img src="./media/pyr_emir.jpg" alt="emir aligned with NCC, red channel misaligned" loading="lazy"><figcaption class="cap"><p class="cap-title">emir.tif, NCC</p><p class="cap-note">Green: (24, 49) · Red: (−205, 141)</p></figcaption></figure>
     <figure><img src="./media/pyr_emir_ssd.jpg" alt="emir aligned with L2, close but visibly off" loading="lazy"><figcaption class="cap"><p class="cap-title">emir.tif, L2</p><p class="cap-note">Green: (24, 49) · Red: (57, 103)</p></figcaption></figure>
   </div>
+</section>
+
+<section class="coda">
+  <p>Thank you for looking at my presentation of colorizing the Russian Empire.</p>
 </section>
 
 <footer>

@@ -309,6 +309,7 @@ footer {
 .wide { margin: 2.5rem 0 0; }
 .wide.hero { margin-top: 3.5rem; }
 .chart { max-width: 34rem; margin: 2rem 0 0; }
+.medium { max-width: 34rem; margin: 2rem 0; }
 .pair.natural { margin: 2.5rem 0 0; }
 .pair.natural img { aspect-ratio: auto; object-fit: contain; }
 .gallery {
