@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project 3A: Exploring the Power of Flow Models — CS 180</title>
+<meta name="description" content="Denoising, sampling, classifier-free guidance, image editing, visual anagrams and hybrid images with the pretrained PixNerd flow model.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body class="p2 p3">
+<div class="wrap">
+
+<nav class="nav">
+  <a href="../index.html">Dennis Vengerov</a>
+  <span>Fall 2026</span>
+</nav>
+
+<header class="masthead">
+  <p class="kicker"><a href="../3/index.html">Project 3</a> · Part A</p>
+  <h1>Exploring the Power of Flow Models</h1>
+  <p class="deck">Denoising and generating and editing images with a pretrained flow model</p>
+</header>
+
+<nav class="toc" aria-label="Contents">
+  <ol>
+    <li><a href="#overview"><span class="n">0</span>Overview</a></li>
+    <li><a href="#p11"><span class="n">1.1</span>Noisy training inputs</a></li>
+    <li><a href="#p12"><span class="n">1.2</span>Classical denoising</a></li>
+    <li><a href="#p13"><span class="n">1.3</span>One-step denoising</a></li>
+    <li><a href="#p14"><span class="n">1.4</span>Visualizing velocity</a></li>
+    <li><a href="#p15"><span class="n">1.5</span>Euler sampling</a></li>
+    <li><a href="#p16"><span class="n">1.6</span>Generating from noise</a></li>
+    <li><a href="#p21"><span class="n">2.1</span>Classifier-free guidance</a></li>
+    <li><a href="#p31"><span class="n">3.1</span>Image-to-image editing</a></li>
+    <li><a href="#p32"><span class="n">3.2</span>Text-guided editing</a></li>
+    <li><a href="#p33"><span class="n">3.3</span>Visual anagrams</a></li>
+    <li><a href="#p34"><span class="n">3.4</span>Hybrid images</a></li>
+  </ol>
+</nav>
+
+<section class="part" id="overview">
+  <h2>Overview</h2>
+  <div class="text">
+    <p>The model is PixNerd-XXL-P16-T2I (pretrained flow model). It predicts the velocity toward a clean image. I mix noise and image based on spec:</p>
+    <p class="formula">x<sub>t</sub> = (1 − t) ε + t x<sub>1</sub></p>
+    <p>At t = 0, image is pure noise. t = 1 is clean image. The seed is 180, h = 0.02. CFG uses w = 7.</p>
+  </div>
+</section>
+
+<!-- ============================ PART 1.1 ============================ -->
+<section class="part" id="p11">
+  <p class="part-label">Part 1.1</p>
+  <h2>Constructing noisy training inputs</h2>
+  <div class="text">
+    <p>My image is a steak. I reuse one noise ε. I also scale the image by t. Thus the noisy version looks greyer.</p>
+  </div>
+  <figure class="wide"><img src="./media/1_1_training_inputs.jpg" alt="Steak photo and its noisy versions at t = 0.25, 0.5 and 0.75" width="1760" height="440" loading="lazy"><figcaption class="cap"><p class="cap-note">Original, then t = 0.25, 0.50, 0.75.</p></figcaption></figure>
+</section>
+
+<!-- ============================ PART 1.2 ============================ -->
+<section class="part" id="p12">
+  <p class="part-label">Part 1.2</p>
+  <h2>Classical denoising</h2>
+  <div class="text">
+    <p>The first question is, can blur remove noise? First I divide by t. This restores the brightness. Then I apply a Gaussian blur. I tried the different sd, σ = 1, 2, 4, 8, 16. I kept the lowest MSE. The more noise needs more blur. But blur also removes image detail. At t = 0.25 it is a blob.</p>
+  </div>
+  <div class="stack s">
+    <figure><img src="./media/1_2_blur_0.25.jpg" alt="Noisy input at t = 0.25 and its Gaussian blur with sigma 8" width="880" height="440" loading="lazy"><figcaption class="cap"><p class="cap-title">t = 0.25</p><p class="cap-note">Best blur: σ = 8.</p></figcaption></figure>
+    <figure><img src="./media/1_2_blur_0.50.jpg" alt="Noisy input at t = 0.5 and its Gaussian blur with sigma 4" width="880" height="440" loading="lazy"><figcaption class="cap"><p class="cap-title">t = 0.50</p><p class="cap-note">Best blur: σ = 4.</p></figcaption></figure>
+    <figure><img src="./media/1_2_blur_0.75.jpg" alt="Noisy input at t = 0.75 and its Gaussian blur with sigma 1" width="880" height="440" loading="lazy"><figcaption class="cap"><p class="cap-title">t = 0.75</p><p class="cap-note">Best blur: σ = 1.</p></figcaption></figure>
+  </div>
+</section>
+
+<!-- ============================ PART 1.3 ============================ -->
+<section class="part" id="p13">
+  <p class="part-label">Part 1.3</p>
+  <h2>One-step denoising</h2>
+  <div class="text">
+    <p>Now I use the model. Prompt: “a high quality photo”. This predicts a velocity towards manifold and not noise. One step to the clean image:</p>
+    <p class="formula">x̂<sub>1</sub> = x<sub>t</sub> + (1 − t) v<sub>θ</sub>(x<sub>t</sub>, t, c)</p>
+    <p>As we see, much better than the blur. Still soft at high noise.</p>
+  </div>
+  <div class="stack m">
+    <figure><img src="./media/1_3_one_step_0.25.jpg" alt="Original, noisy input at t = 0.25, and one-step estimate" width="1320" height="440" loading="lazy"><figcaption class="cap"><p class="cap-title">t = 0.25</p><p class="cap-note">Original, noisy input, one step estimate.</p></figcaption></figure>
+    <figure><img src="./media/1_3_one_step_0.50.jpg" alt="Original, noisy input at t = 0.5, and one-step estimate" width="1320" height="440" loading="lazy"><figcaption class="cap"><p class="cap-title">t = 0.50</p><p class="cap-note">Original, noisy input, one step estimate.</p></figcaption></figure>
+    <figure><img src="./media/1_3_one_step_0.75.jpg" alt="Original, noisy input at t = 0.75, and one-step estimate" width="1320" height="440" loading="lazy"><figcaption class="cap"><p class="cap-title">t = 0.75</p><p class="cap-note">Original, noisy input, one step estimate.</p></figcaption></figure>
+  </div>
+</section>
+
+<!-- ============================ PART 1.4 ============================ -->
+<section class="part" id="p14">
+  <p class="part-label">Part 1.4</p>
+  <h2>Visualizing velocity</h2>
+  <div class="text">
+    <p>Another question: what does the model actually add? We saved the noise. So we know the true actual update. We can compare it to the prediction. Same scale, zero is gray. Error: RGB RMS per pixel. Same limits at every t. Error sits on the crust. It shrinks as t grows.</p>
+  </div>
+  <figure class="fig-s"><img src="./media/1_4_original.jpg" alt="The original steak image" width="512" height="512" loading="lazy"><figcaption class="cap"><p class="cap-note">Original image.</p></figcaption></figure>
+  <div class="stack">
+    <figure><img src="./media/1_4_velocity_0.25.jpg" alt="At t = 0.25: noisy image, predicted update, ground-truth update and error heatmap" width="1760" height="440" loading="lazy"><figcaption class="cap"><p class="cap-title">t = 0.25</p><p class="cap-note">The noisy input, predicted update, ground truth update, error.</p></figcaption></figure>
+    <figure><img src="./media/1_4_velocity_0.50.jpg" alt="At t = 0.5: noisy image, predicted update, ground-truth update and error heatmap" width="1760" height="440" loading="lazy"><figcaption class="cap"><p class="cap-title">t = 0.50</p><p class="cap-note">The noisy input, predicted update, ground truth update, error.</p></figcaption></figure>
+    <figure><img src="./media/1_4_velocity_0.75.jpg" alt="At t = 0.75: noisy image, predicted update, ground-truth update and error heatmap" width="1760" height="440" loading="lazy"><figcaption class="cap"><p class="cap-title">t = 0.75</p><p class="cap-note">The noisy input, predicted update, ground truth update, error.</p></figcaption></figure>
+  </div>
+  <figure class="fig-l"><img src="./media/1_4_error_tight.jpg" alt="The three error heatmaps on a tighter shared color scale" width="1320" height="484" loading="lazy"><figcaption class="cap"><p class="cap-note">The same error maps, vmax lowered to 40%.</p></figcaption></figure>
+</section>
+
+<!-- ============================ PART 1.5 ============================ -->
+<section class="part" id="p15">
+  <p class="part-label">Part 1.5</p>
+  <h2>Iterative denoising with Euler sampling</h2>
+  <div class="text">
+    <p>One step is a rough guess. The velocity changes along the way. So it makes sense if we take small steps:</p>
+    <p class="formula">x<sub>t+h</sub> = x<sub>t</sub> + h v<sub>θ</sub>(x<sub>t</sub>, t, c)</p>
+    <p>25 steps from t = 0.5. The last step is on t = 1.</p>
+  </div>
+  <figure class="fig-l"><img src="./media/1_5_trajectory.jpg" alt="Euler trajectory from t = 0.5 to t = 1 in steps of 0.1" width="1320" height="880" loading="lazy"><figcaption class="cap"><p class="cap-note">Start, every fifth step, final.</p></figcaption></figure>
+  <figure class="wide"><img src="./media/1_5_comparison.jpg" alt="Original, Gaussian blur, one-step estimate and Euler result for the t = 0.5 input" width="1760" height="440" loading="lazy"><figcaption class="cap"><p class="cap-note">All from the t = 0.5 input. MSE: blur 0.0475, one step 0.0308, Euler 0.0388. Euler looks the sharpest. But its MSE is higher. It makes up its own texture at fine levels.</p></figcaption></figure>
+</section>
+
+<!-- ============================ PART 1.6 ============================ -->
+<section class="part" id="p16">
+  <p class="part-label">Part 1.6</p>
+  <h2>Generating images from noise</h2>
+  <div class="text">
+    <p>Same sampler, starts at t = 0. The prompt is “a high quality photo” with no guidance.</p>
+  </div>
+  <figure class="wide samples-fig">
+    <div class="samples">
+      <figure><img src="./media/1_6_seed180.jpg" alt="Sample from seed 180: a person with a smeared, faceless head" width="512" height="512" loading="lazy"><figcaption>Seed 180</figcaption></figure>
+      <figure><img src="./media/1_6_seed181.jpg" alt="Sample from seed 181: a woman with tattoos against a gray wall" width="512" height="512" loading="lazy"><figcaption>Seed 181</figcaption></figure>
+      <figure><img src="./media/1_6_seed182.jpg" alt="Sample from seed 182: a woman with her hand on her cheek" width="512" height="512" loading="lazy"><figcaption>Seed 182</figcaption></figure>
+      <figure><img src="./media/1_6_seed183.jpg" alt="Sample from seed 183: a distorted face of an older man" width="512" height="512" loading="lazy"><figcaption>Seed 183</figcaption></figure>
+      <figure><img src="./media/1_6_seed184.jpg" alt="Sample from seed 184: a man in a gray T-shirt" width="512" height="512" loading="lazy"><figcaption>Seed 184</figcaption></figure>
+    </div>
+    <figcaption class="cap"><p class="cap-note">Five samples, 50 Euler steps.</p></figcaption>
+  </figure>
+  <div class="text">
+    <p>Every sample is a person. To this model photo means portrait lol. Quality is hit or miss. Seed 180 has no face. Seed 183 looks melted.</p>
+  </div>
+</section>
+
+<!-- ============================ PART 2.1 ============================ -->
+<section class="part" id="p21">
+  <p class="part-label">Part 2.1</p>
+  <h2>Classifier-free guidance (CFG)</h2>
+  <div class="text">
+    <p>CFG runs the model twice. Once with the prompt. Once with an empty prompt. Then it pushes away from empty:</p>
+    <p class="formula">v<sub>cfg</sub> = v<sub>c</sub> + w (v<sub>c</sub> − v<sub>u</sub>),   w = 7</p>
+    <p>Same five noises as 1.6.</p>
+  </div>
+  <figure class="wide samples-fig">
+    <p class="row-label">No guidance (1.6)</p>
+    <div class="samples">
+      <figure><img src="./media/1_6_seed180.jpg" alt="Unguided sample, seed 180" width="512" height="512" loading="lazy"><figcaption>Seed 180</figcaption></figure>
+      <figure><img src="./media/1_6_seed181.jpg" alt="Unguided sample, seed 181" width="512" height="512" loading="lazy"><figcaption>Seed 181</figcaption></figure>
+      <figure><img src="./media/1_6_seed182.jpg" alt="Unguided sample, seed 182" width="512" height="512" loading="lazy"><figcaption>Seed 182</figcaption></figure>
+      <figure><img src="./media/1_6_seed183.jpg" alt="Unguided sample, seed 183" width="512" height="512" loading="lazy"><figcaption>Seed 183</figcaption></figure>
+      <figure><img src="./media/1_6_seed184.jpg" alt="Unguided sample, seed 184" width="512" height="512" loading="lazy"><figcaption>Seed 184</figcaption></figure>
+    </div>
+    <p class="row-label">CFG, w = 7</p>
+    <div class="samples">
+      <figure><img src="./media/2_1_cfg_seed180.jpg" alt="CFG sample, seed 180: a smiling man against a light background" width="512" height="512" loading="lazy"><figcaption>Seed 180</figcaption></figure>
+      <figure><img src="./media/2_1_cfg_seed181.jpg" alt="CFG sample, seed 181: a smiling woman with dark hair" width="512" height="512" loading="lazy"><figcaption>Seed 181</figcaption></figure>
+      <figure><img src="./media/2_1_cfg_seed182.jpg" alt="CFG sample, seed 182: a woman with her hand near her cheek on a black background" width="512" height="512" loading="lazy"><figcaption>Seed 182</figcaption></figure>
+      <figure><img src="./media/2_1_cfg_seed183.jpg" alt="CFG sample, seed 183: a man in a gray T-shirt on a black background" width="512" height="512" loading="lazy"><figcaption>Seed 183</figcaption></figure>
+      <figure><img src="./media/2_1_cfg_seed184.jpg" alt="CFG sample, seed 184: a young man in a blue sweater" width="512" height="512" loading="lazy"><figcaption>Seed 184</figcaption></figure>
+    </div>
+    <figcaption class="cap"><p class="cap-note">Top: no guidance. Bottom: CFG.</p></figcaption>
+  </figure>
+  <div class="text">
+    <p>As we see, every image is a clean headshot. The broken faces are gone. Some layout still carries over though. Seed 182 keeps the hand. The tradeoff here is diversity. All five look alike now due to strong guidance towards the prompt.</p>
+  </div>
+</section>
+
+<!-- ============================ PART 3.1 ============================ -->
+<section class="part" id="p31">
+  <p class="part-label">Part 3.1</p>
+  <h2>Image-to-image editing</h2>
+  <div class="text">
+    <p>Add a little noise. Then run the sampler. The model fills the gaps. So this gets us an edit. This is SDEdit. If lower start, means edit is much bigger. Same noise in every panel.</p>
+  </div>
+
+  <h3>Campanile</h3>
+  <figure class="wide"><img src="./media/3_1_campanile.jpg" alt="Campanile and its edits at starting times 0.02 to 0.50" width="1760" height="880" loading="lazy"><figcaption class="cap"><p class="cap-note">Start times 0.02 to 0.50. The tower turns into an obelisk. The belfry returns at 0.25.</p></figcaption></figure>
+
+  <h3>My image 1: steak</h3>
+  <figure class="wide"><img src="./media/3_1_steak.jpg" alt="Steak photo and its edits at starting times 0.02 to 0.50" width="1760" height="880" loading="lazy"><figcaption class="cap"><p class="cap-note">Low start times give faces. At 0.25 a face remains.</p></figcaption></figure>
+
+  <h3>My image 2: me at a lake</h3>
+  <figure class="wide"><img src="./media/3_1_lake.jpg" alt="Photo of me in a lake at dusk and its edits at starting times 0.02 to 0.50" width="1760" height="880" loading="lazy"><figcaption class="cap"><p class="cap-note">My image disappears at 0.04 and 0.06. I return at 0.10. The branch becomes a camera.</p></figcaption></figure>
+
+  <h3>Web image: Where’s Waldo?</h3>
+  <figure class="wide"><img src="./media/3_1_web.jpg" alt="A Where's Waldo underwater scene and its edits at starting times 0.02 to 0.50" width="1760" height="880" loading="lazy"><figcaption class="cap"><p class="cap-note">At first it is a monitor. The figures return at 0.50.</p></figcaption></figure>
+
+  <h3>Hand-drawn image 1: frog</h3>
+  <figure class="wide"><img src="./media/3_1_drawing_frog.jpg" alt="A cartoon frog drawing labeled phrog and its edits at starting times 0.02 to 0.50" width="1760" height="880" loading="lazy"><figcaption class="cap"><p class="cap-note">At first it starts as a man (seems like this model really likes people). The text slowly fixes itself.</p></figcaption></figure>
+
+  <h3>Hand-drawn image 2: car</h3>
+  <figure class="wide"><img src="./media/3_1_drawing_car.jpg" alt="A line drawing of a car with hearts and its edits at starting times 0.02 to 0.50" width="1760" height="880" loading="lazy"><figcaption class="cap"><p class="cap-note">Thin lines don’t survive noise. At 0.14 it is a silver car. From 0.25 it is the drawing.</p></figcaption></figure>
+</section>
+
+<!-- ============================ PART 3.2 ============================ -->
+<section class="part" id="p32">
+  <p class="part-label">Part 3.2</p>
+  <h2>Text-guided image editing</h2>
+  <div class="text">
+    <p>Same as 3.1. But with my own prompt. Low start follows the prompt. High start keeps the image. The middle mixes both.</p>
+  </div>
+
+  <h3>Campanile</h3>
+  <figure class="wide"><img src="./media/3_2_campanile.jpg" alt="Campanile edited toward an elephant tusk at starting times 0.02 to 0.50" width="1760" height="880" loading="lazy"><figcaption class="cap"><p class="cap-note">Prompt: “An elephant tusk in the middle of UC Berkeley”. Middle times give an ivory tower (as the Campanile shape is same).</p></figcaption></figure>
+
+  <h3>Steak</h3>
+  <figure class="wide"><img src="./media/3_2_steak.jpg" alt="Steak edited toward an exploding planet Earth at starting times 0.02 to 0.50" width="1760" height="880" loading="lazy"><figcaption class="cap"><p class="cap-note">Prompt: “The planet earth after a nuclear bomb explodes”. The steak becomes the globe.</p></figcaption></figure>
+
+  <h3>Me at a lake</h3>
+  <figure class="wide"><img src="./media/3_2_lake.jpg" alt="Lake photo edited toward an alien planet with an explorer at starting times 0.02 to 0.50" width="1760" height="880" loading="lazy"><figcaption class="cap"><p class="cap-note">Prompt: “The surface of a foreign planet with a lonely explorer”. I get a space helmet.</p></figcaption></figure>
+</section>
+
+<!-- ============================ PART 3.3 ============================ -->
+<section class="part" id="p33">
+  <p class="part-label">Part 3.3</p>
+  <h2>Visual anagrams</h2>
+  <div class="text">
+    <p>One image and two prompts. For each step, use two velocities. Upright with prompt 1. Then flip 180° and use prompt 2. I flip the second one back. Then I average the velocities. Prompts are as typed.</p>
+  </div>
+
+  <h3>Elephant and Colosseum</h3>
+  <div class="pair natural">
+    <figure><img src="./media/3_3_anagram_0.jpg" alt="Van Gogh style painting of an elephant" width="512" height="512" loading="lazy"><figcaption class="cap"><p class="cap-title">Upright</p><p class="cap-note">“Vang Gogh style paining of an Elephant”</p></figcaption></figure>
+    <figure><img src="./media/3_3_anagram_0_rot.jpg" alt="The same painting rotated 180 degrees, showing a ruined arcaded building" width="512" height="512" loading="lazy"><figcaption class="cap"><p class="cap-title">Rotated 180°</p><p class="cap-note">“Vang Gogh style painting of the Colloseum”</p></figcaption></figure>
+  </div>
+
+  <h3>Little girl and old guy</h3>
+  <div class="pair natural">
+    <figure><img src="./media/3_3_anagram_1.jpg" alt="Cartoon of a little girl with a black bob in the style of Yoshitomo Nara" width="512" height="512" loading="lazy"><figcaption class="cap"><p class="cap-title">Upright</p><p class="cap-note">“Yoshitomo Nara Art Style (mixes cute cartoon aesthetics with dark, punk-rock rebellion, deep loneliness, and anti-war or anti-authority themes) of a Little girl”</p></figcaption></figure>
+    <figure><img src="./media/3_3_anagram_1_rot.jpg" alt="The same image rotated 180 degrees, showing a bald figure with a black beard" width="512" height="512" loading="lazy"><figcaption class="cap"><p class="cap-title">Rotated 180°</p><p class="cap-note">“Yoshitomo Nara Art Style (mixes cute cartoon aesthetics with dark, punk-rock rebellion, deep loneliness, and anti-war or anti-authority themes) of a old guy”</p></figcaption></figure>
+  </div>
+</section>
+
+<!-- ============================ PART 3.4 ============================ -->
+<section class="part" id="p34">
+  <p class="part-label">Part 3.4</p>
+  <h2>Hybrid images</h2>
+  <div class="text">
+    <p>Like the Project 2 hybrids. But on the velocity with every step. Low frequencies for the far prompt. High frequencies for the near prompt. Split with a Gaussian blur. σ = 16, kernel 265. To see results, look at the small version. Or step back. Both are two different images, cool!?</p>
+  </div>
+  <div class="hybrids">
+    <figure><div class="sizes"><img class="big" src="./media/3_4_hybrid_1.jpg" alt="Hybrid: a red mushroom cloud up close that reads as a heart from far away" width="512" height="512" loading="lazy"><img class="tiny" src="./media/3_4_hybrid_1_far.png" alt="The same hybrid at 64 by 64 pixels" width="64" height="64" loading="lazy"></div><figcaption class="cap"><p class="cap-title">Near explosion, far heart</p><p class="cap-note">Near: “lithograph style painting of a nuclear explosion”<br>Far: “Lithograph style painting of a heart”</p></figcaption></figure>
+    <figure><div class="sizes"><img class="big" src="./media/3_4_hybrid_0.jpg" alt="Hybrid: a misty forest lake up close that reads as a dark car silhouette from far away" width="512" height="512" loading="lazy"><img class="tiny" src="./media/3_4_hybrid_0_far.png" alt="The same hybrid at 64 by 64 pixels" width="64" height="64" loading="lazy"></div><figcaption class="cap"><p class="cap-title">Near lake, far car</p><p class="cap-note">Near: “a lithograph of a lake”<br>Far: “a lithograph of a a car”</p></figcaption></figure>
+  </div>
+</section>
+
+<footer>
+  <p class="foot-nav"><a href="../3b/index.html">Part B: Flow Matching from Scratch</a></p>
+</footer>
+
+</div>
+</body>
+</html>

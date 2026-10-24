@@ -496,3 +496,100 @@ var { font-style: italic; }
 
 .p2 strong { font-weight: 600; }
 .coda .part-label { font-size: 0.9rem; line-height: 1.4; margin: 0 0 0.6rem; }
+
+/* ---- Project 3A: stacked figures, sample grids, anagrams, hybrids ----
+   The page also carries the .p2 class to reuse the styles above. */
+.stack {
+  display: grid;
+  gap: 1.75rem;
+  margin: 2.5rem 0 0;
+}
+.stack.s { max-width: 40rem; }
+.stack.m { max-width: 56rem; }
+.fig-l { max-width: 56rem; margin: 2.5rem 0 0; }
+
+.row-label {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 0.95rem;
+  margin: 0 0 0.6rem;
+}
+.samples + .row-label { margin-top: 1.5rem; }
+.samples {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.6rem;
+}
+.samples figcaption {
+  font-family: var(--display);
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.35rem;
+}
+
+.p3 .pair.natural { max-width: 46rem; margin: 2.25rem 0 0; }
+.p3 .hybrids .big { height: 22rem; }
+.p3 .hybrids .tiny { height: 64px; }
+
+.p3 .stack + .text,
+.p3 .pair + .text,
+.p3 .samples-fig + .text { margin-top: 2.25rem; }
+
+@media (max-width: 760px) {
+  .samples { grid-template-columns: repeat(3, 1fr); }
+  .p3 .pair.natural { grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+  .p3 .hybrids .big { height: 16rem; }
+}
+@media print {
+  .p3 .stack, .p3 .fig-l, .p3 .pair.natural, .p3 .samples-fig { margin-top: 1.1rem; }
+  .p3 .stack { gap: 0.9rem; }
+  .p3 .stack.s { max-width: 30rem; }
+  .p3 .fig-s { max-width: 15rem; }
+  .p3 .fig-l { max-width: 40rem; }
+  .p3 .pair.natural { max-width: 34rem; }
+  .p3 .samples { grid-template-columns: repeat(5, 1fr); gap: 0.4rem; }
+  .p3 .samples-fig .row-label { break-after: avoid; }
+  .p3 .hybrids .big { height: 14rem; }
+  .p3 .stack + .text, .p3 .pair + .text, .p3 .samples-fig + .text { margin-top: 1.1rem; }
+}
+.p3 .pair.natural.l { max-width: 60rem; }
+.p3 .foot-nav { margin: 0 0 0.6rem; }
+.toc.wide-n .n { min-width: 3.9rem; }
+
+/* ---- Project 3 hub: one card per part ---- */
+.parts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(1.25rem, 3vw, 2.5rem);
+  max-width: 56rem;
+  margin: 4rem 0 0;
+}
+.part-card {
+  display: block;
+  text-decoration: none;
+}
+.part-card .frame {
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  background: var(--frame);
+}
+.part-card .frame img {
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.7s ease;
+}
+.part-card.flip:hover .frame img,
+.part-card.flip:focus-visible .frame img { transform: rotate(180deg); }
+.part-card .part-label { margin: 1rem 0 0.2rem; }
+.part-card .project-title { font-size: 1.45rem; }
+.part-card .project-sub { font-size: 1rem; }
+.part-card:hover .project-title { color: var(--accent); }
+@media (max-width: 560px) {
+  .parts { grid-template-columns: 1fr; max-width: 24rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .part-card .frame img { transition: none; }
+}
+@media print {
+  .p3 .pair.natural.l { max-width: none; }
+}

@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project 3B: Flow Matching from Scratch — CS 180</title>
+<meta name="description" content="A single-step denoising UNet and time- and class-conditioned flow matching models trained on MNIST.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body class="p2 p3">
+<div class="wrap">
+
+<nav class="nav">
+  <a href="../index.html">Dennis Vengerov</a>
+  <span>Fall 2026</span>
+</nav>
+
+<header class="masthead">
+  <p class="kicker"><a href="../3/index.html">Project 3</a> · Part B</p>
+  <h1>Flow Matching from Scratch</h1>
+  <p class="deck">Training a UNet on MNIST</p>
+</header>
+
+<nav class="toc wide-n" aria-label="Contents">
+  <ol>
+    <li><a href="#overview"><span class="n">0</span>Overview</a></li>
+    <li><a href="#p12"><span class="n">1.2</span>Noising process</a></li>
+    <li><a href="#p121"><span class="n">1.2.1</span>Training the denoiser</a></li>
+    <li><a href="#p122"><span class="n">1.2.2</span>Out-of-distribution noise</a></li>
+    <li><a href="#p123"><span class="n">1.2.3</span>Denoising pure noise</a></li>
+    <li><a href="#p22"><span class="n">2.1</span>Time-conditioned flow matching</a></li>
+    <li><a href="#p25"><span class="n">2.4</span>Class-conditioned flow matching</a></li>
+    <li><a href="#nosched"><span class="n">2.6</span>Removing the scheduler</a></li>
+  </ol>
+</nav>
+
+<section class="part" id="overview">
+  <h2>Overview</h2>
+  <div class="text">
+    <p>Now I train our own UNet model. The data is MNIST. Initially, I train a one step denoiser. After that a flow matching model. Also additional time and class inputs.</p>
+  </div>
+</section>
+
+<!-- ============================ PART 1.2 ============================ -->
+<section class="part" id="p12">
+  <p class="part-label">Part 1.2</p>
+  <h2>Noising process</h2>
+  <div class="text">
+    <p>We noise clean digits:</p>
+    <p class="formula">z = x + σ ε,   ε ~ N(0, I)</p>
+  </div>
+  <figure class="wide"><img src="./media/1_2_noise_levels.png" alt="A test digit 7 with increasing amounts of noise" width="1245" height="194" loading="lazy"><figcaption class="cap"><p class="cap-note">σ = 0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0.</p></figcaption></figure>
+</section>
+
+<!-- ============================ PART 1.2.1 ============================ -->
+<section class="part" id="p121">
+  <p class="part-label">Part 1.2.1</p>
+  <h2>Training the denoiser</h2>
+  <div class="text">
+    <p>Input: z with σ = 0.5. Target: the clean x. L2 loss. D = 128, batch 256. Adam, learning rate 1e-4. 5 epochs. Fresh noise every batch.</p>
+  </div>
+  <figure class="fig-m"><img src="./media/1_2_1_denoise_loss.png" alt="Training loss of the single-step denoiser over five epochs" width="950" height="340" loading="lazy"><figcaption class="cap"><p class="cap-note">Training loss, σ = 0.5. Blue: every step. Orange: 100-step average.</p></figcaption></figure>
+  <div class="pair natural l">
+    <figure><img src="./media/1_2_1_denoise_epoch1.png" alt="Clean, noisy and denoised test digits after epoch 1" width="940" height="391" loading="lazy"><figcaption class="cap"><p class="cap-title">After epoch 1</p><p class="cap-note">Rows: clean, noisy, denoised.</p></figcaption></figure>
+    <figure><img src="./media/1_2_1_denoise_epoch5.png" alt="Clean, noisy and denoised test digits after epoch 5" width="940" height="391" loading="lazy"><figcaption class="cap"><p class="cap-title">After epoch 5</p><p class="cap-note">Same digits. Cleaner strokes.</p></figcaption></figure>
+  </div>
+</section>
+
+<!-- ============================ PART 1.2.2 ============================ -->
+<section class="part" id="p122">
+  <p class="part-label">Part 1.2.2</p>
+  <h2>Out-of-distribution noise</h2>
+  <div class="text">
+    <p>Trained only on σ = 0.5. What about other levels? Up to 0.6 it works. Higher σ adds fake strokes.</p>
+  </div>
+  <figure class="fig-l"><img src="./media/1_2_2_ood.png" alt="The same test digit at seven noise levels and the denoiser output for each" width="746" height="254" loading="lazy"><figcaption class="cap"><p class="cap-note">Top: noisy. Bottom: denoised. σ values as in 1.2.</p></figcaption></figure>
+</section>
+
+<!-- ============================ PART 1.2.3 ============================ -->
+<section class="part" id="p123">
+  <p class="part-label">Part 1.2.3</p>
+  <h2>Denoising pure noise</h2>
+  <div class="text">
+    <p>Input: pure noise only. Target: a clean digit. Same training as before.</p>
+  </div>
+  <figure class="fig-m"><img src="./media/1_2_3_pure_loss.png" alt="Training loss when the input is pure noise, flattening out almost immediately" width="950" height="340" loading="lazy"><figcaption class="cap"><p class="cap-note">Loss with pure noise input.</p></figcaption></figure>
+  <div class="stack">
+    <figure><img src="./media/1_2_3_pure_epoch1.png" alt="Eight outputs from pure noise after epoch 1, all the same blurry blob" width="1420" height="225" loading="lazy"><figcaption class="cap"><p class="cap-title">After epoch 1</p><p class="cap-note">8 different noise inputs.</p></figcaption></figure>
+    <figure><img src="./media/1_2_3_pure_epoch5.png" alt="Eight outputs from pure noise after epoch 5, all the same blurry blob" width="1420" height="225" loading="lazy"><figcaption class="cap"><p class="cap-title">After epoch 5</p><p class="cap-note">8 different noise inputs.</p></figcaption></figure>
+  </div>
+  <div class="text">
+    <p>Every output is the same blob. It looks like all digits averaged. Why? Noise holds no digit information. MSE then favors the average. That is the training centroid. The loss flattens almost instantly. So one step can’t generate. We need flow matching.</p>
+  </div>
+</section>
+
+<!-- ============================ PARTS 2.1 to 2.3 ============================ -->
+<section class="part" id="p22">
+  <p class="part-label">Parts 2.1 to 2.3</p>
+  <h2>Time-conditioned flow matching</h2>
+  <div class="text">
+    <p>Now we denoise in steps. Like in Part A.</p>
+    <p class="formula">x<sub>t</sub> = (1 − t) x<sub>0</sub> + t x<sub>1</sub></p>
+    <p>The UNet predicts x<sub>1</sub> − x<sub>0</sub>. Two FC blocks inject t. D = 64, batch 64. Adam, learning rate 1e-2. Exponential decay, γ = 0.1<sup>1/10</sup>. 10 epochs. Sampling: 50 Euler steps.</p>
+  </div>
+  <figure class="fig-m"><img src="./media/2_2_time_loss.png" alt="Training loss of the time-conditioned UNet over ten epochs" width="944" height="340" loading="lazy"><figcaption class="cap"><p class="cap-note">Time-conditioned training loss.</p></figcaption></figure>
+  <div class="stack m">
+    <figure><img src="./media/2_3_time_epoch1.png" alt="Forty time-conditioned samples after epoch 1, mostly squiggles" width="1227" height="530" loading="lazy"><figcaption class="cap"><p class="cap-title">Epoch 1</p><p class="cap-note">Mostly squiggles.</p></figcaption></figure>
+    <figure><img src="./media/2_3_time_epoch5.png" alt="Forty time-conditioned samples after epoch 5, mostly digits" width="1227" height="530" loading="lazy"><figcaption class="cap"><p class="cap-title">Epoch 5</p><p class="cap-note">Most are digits now.</p></figcaption></figure>
+    <figure><img src="./media/2_3_time_epoch10.png" alt="Forty time-conditioned samples after epoch 10" width="1227" height="530" loading="lazy"><figcaption class="cap"><p class="cap-title">Epoch 10</p><p class="cap-note">Cleaner, but some aren’t digits.</p></figcaption></figure>
+  </div>
+</section>
+
+<!-- ============================ PARTS 2.4 to 2.6 ============================ -->
+<section class="part" id="p25">
+  <p class="part-label">Parts 2.4 to 2.6</p>
+  <h2>Class-conditioned flow matching</h2>
+  <div class="text">
+    <p>I also give the class. One-hot, through two FC blocks. c1 · unflatten + t1. c2 · up1 + t2. Class dropout: 10%. This enables CFG. Same training settings.</p>
+    <p>300 Euler steps. CFG with γ = 5:</p>
+    <p class="formula">u = u<sub>uncond</sub> + γ (u<sub>cond</sub> − u<sub>uncond</sub>)</p>
+  </div>
+  <figure class="fig-m"><img src="./media/2_5_class_loss.png" alt="Training loss of the class-conditioned UNet over ten epochs" width="944" height="340" loading="lazy"><figcaption class="cap"><p class="cap-note">Class-conditioned training loss.</p></figcaption></figure>
+  <div class="stack m">
+    <figure><img src="./media/2_6_class_epoch1.png" alt="Four samples of each digit after epoch 1" width="1227" height="530" loading="lazy"><figcaption class="cap"><p class="cap-title">Epoch 1</p><p class="cap-note">Each column is one digit. 4 samples each. 4s and 5s look messy.</p></figcaption></figure>
+    <figure><img src="./media/2_6_class_epoch5.png" alt="Four samples of each digit after epoch 5" width="1227" height="530" loading="lazy"><figcaption class="cap"><p class="cap-title">Epoch 5</p><p class="cap-note">Every digit looks right.</p></figcaption></figure>
+    <figure><img src="./media/2_6_class_epoch10.png" alt="Four samples of each digit after epoch 10" width="1227" height="530" loading="lazy"><figcaption class="cap"><p class="cap-title">Epoch 10</p><p class="cap-note">Clean digits, different styles.</p></figcaption></figure>
+  </div>
+</section>
+
+<!-- ============================ NO SCHEDULER ============================ -->
+<section class="part" id="nosched">
+  <p class="part-label">Part 2.6</p>
+  <h2>Removing the scheduler</h2>
+  <div class="text">
+    <p>Can we drop the scheduler? Scheduled: 1e-2 down to 1e-3. My fix: constant 1e-3. Everything else stayed the same. Results look just as good.</p>
+  </div>
+  <div class="pair natural l">
+    <figure><img src="./media/2_6_class_epoch10.png" alt="Class-conditioned samples at epoch 10 with the scheduler" width="1227" height="530" loading="lazy"><figcaption class="cap"><p class="cap-title">With scheduler</p><p class="cap-note">Decaying learning rate, epoch 10.</p></figcaption></figure>
+    <figure><img src="./media/2_6_nosched_epoch10.png" alt="Class-conditioned samples at epoch 10 without the scheduler" width="1227" height="530" loading="lazy"><figcaption class="cap"><p class="cap-title">No scheduler</p><p class="cap-note">Constant 1e-3, epoch 10.</p></figcaption></figure>
+  </div>
+  <div class="pair natural l">
+    <figure><img src="./media/2_5_class_loss.png" alt="Training loss with the scheduler" width="944" height="340" loading="lazy"><figcaption class="cap"><p class="cap-note">Loss with scheduler.</p></figcaption></figure>
+    <figure><img src="./media/2_6_nosched_loss.png" alt="Training loss without the scheduler" width="944" height="340" loading="lazy"><figcaption class="cap"><p class="cap-note">Loss without scheduler.</p></figcaption></figure>
+  </div>
+</section>
+
+<footer>
+  <p class="foot-nav"><a href="../3a/index.html">Part A: Exploring the Power of Flow Models</a></p>
+  <p>Data: MNIST.</p>
+</footer>
+
+</div>
+</body>
+</html>
