@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project 4A: Image Warping and Mosaicing — CS 180</title>
+<meta name="description" content="Recovering homographies from clicked points, inverse warping with nearest neighbor and bilinear interpolation, rectification, and three feathered mosaics.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body class="p2 p3 p4">
+<div class="wrap">
+
+<nav class="nav">
+  <a href="../index.html">Dennis Vengerov</a>
+  <span>Fall 2026</span>
+</nav>
+
+<header class="masthead">
+  <p class="kicker">Project 4 · Part A</p>
+  <h1>Image Warping and Mosaicing</h1>
+  <p class="deck">Homographies from clicked points, warping from scratch, and three stitched mosaics</p>
+</header>
+
+<nav class="toc" aria-label="Contents">
+  <ol>
+    <li><a href="#overview"><span class="n">0</span>Overview</a></li>
+    <li><a href="#a1"><span class="n">A.1</span>Shooting the pictures</a></li>
+    <li><a href="#a2"><span class="n">A.2</span>Recovering homographies</a></li>
+    <li><a href="#a3"><span class="n">A.3</span>Warping and rectification</a></li>
+    <li><a href="#a4"><span class="n">A.4</span>Blending into mosaics</a></li>
+    <li><a href="#learned"><span class="n">→</span>What I learned</a></li>
+  </ol>
+</nav>
+
+<section class="part" id="overview">
+  <h2>Overview</h2>
+  <div class="text">
+    <p>In this project, I wanted to understand how photos taken from the same position can be combined into a wider image. I started by clicking corresponding points, used them to recover a homography H, and then warped and blended the images together. I implemented these steps myself because I wanted to understand what actually happens to the pixels throughout the process. I did not use homography or warping functions from cv2 or skimage. For the supporting computations, I used numpy for linear algebra (<code>lstsq</code>, <code>inv</code>) and scipy for the distance transform that determines the blending weights.</p>
+    <p>I resized every photo to 1200 px on its longer side, giving images of size 900 by 1200. All pixel measurements on this page refer to these resized images.</p>
+  </div>
+</section>
+
+<!-- ============================ A.1 ============================ -->
+<section class="part" id="a1">
+  <p class="part-label">Part A.1</p>
+  <h2>Shooting the pictures</h2>
+  <div class="text">
+    <p>I took three sets of photos for the mosaics and two additional photos for rectification in A.3. I wanted the images in each set to be related by a projective transform. For scenes with objects at different depths, this means rotating the camera while keeping its position fixed. I stayed in one place and turned my phone between shots, keeping about half of each image overlapping with the next.</p>
+    <p>I arranged each set below from left to right to match its order in the final mosaic. For the sets with a middle photo, I used that image as the reference. For the library pair, I used the right photo.</p>
+  </div>
+
+  <h3>Glass building</h3>
+  <div class="srcs">
+    <figure><img src="./media/src_8893.jpg" alt="Left photo: the curved glass building and its covered entrance" width="434" height="577" loading="lazy"><figcaption><b>IMG_8893</b> · left</figcaption></figure>
+    <figure><img src="./media/src_8892.jpg" alt="Middle photo: the curved glass facade with two trees" width="434" height="577" loading="lazy"><figcaption><b>IMG_8892</b> · middle, reference</figcaption></figure>
+    <figure><img src="./media/src_8891.jpg" alt="Right photo: the facade reflecting the sunset" width="434" height="577" loading="lazy"><figcaption><b>IMG_8891</b> · right</figcaption></figure>
+  </div>
+
+  <h3>Rooftop at sunset</h3>
+  <div class="srcs">
+    <figure><img src="./media/src_8903.jpg" alt="Left photo: a flat roof, a crane and the skyline" width="434" height="577" loading="lazy"><figcaption><b>IMG_8903</b> · left</figcaption></figure>
+    <figure><img src="./media/src_8902.jpg" alt="Middle photo: the Walgreens roof and an apartment building" width="434" height="577" loading="lazy"><figcaption><b>IMG_8902</b> · middle, reference</figcaption></figure>
+    <figure><img src="./media/src_8901.jpg" alt="Right photo: the apartment building and street against an orange sky" width="434" height="577" loading="lazy"><figcaption><b>IMG_8901</b> · right</figcaption></figure>
+  </div>
+
+  <h3>Library shelves</h3>
+  <div class="srcs two">
+    <figure><img src="./media/src_8919.jpg" alt="Left photo: bookshelves seen at an angle" width="434" height="577" loading="lazy"><figcaption><b>IMG_8919</b> · left, at an angle</figcaption></figure>
+    <figure><img src="./media/src_8920.jpg" alt="Right photo: the same bookshelves seen straight on" width="434" height="577" loading="lazy"><figcaption><b>IMG_8920</b> · right, reference</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============================ A.2 ============================ -->
+<section class="part" id="a2">
+  <p class="part-label">Part A.2</p>
+  <h2>Recovering homographies</h2>
+  <div class="text">
+    <p>A homography describes how a point (x, y) in one image maps to a corresponding point (x′, y′) in another. I represent this transformation in homogeneous coordinates using a 3 by 3 matrix H. Fixing the bottom right entry to 1 leaves 8 unknown values, a through h, that I need to recover from the correspondences.</p>
+  </div>
+  <div class="eq-wrap">
+    <div class="eq">
+      <span class="mat c1"><span><var>w</var><var>x</var>′</span><span><var>w</var><var>y</var>′</span><span><var>w</var></span></span>
+      <span class="op">=</span>
+      <span class="mat c3"><span><var>a</var></span><span><var>b</var></span><span><var>c</var></span><span><var>d</var></span><span><var>e</var></span><span><var>f</var></span><span><var>g</var></span><span><var>h</var></span><span>1</span></span>
+      <span class="mat c1"><span><var>x</var></span><span><var>y</var></span><span>1</span></span>
+    </div>
+  </div>
+  <div class="text">
+    <p>The matrix multiplication gives homogeneous coordinates. To recover the actual image coordinates, I divide by w:</p>
+    <p class="formula"><var>x</var>′ = (<var>ax</var> + <var>by</var> + <var>c</var>) / (<var>gx</var> + <var>hy</var> + 1),    <var>y</var>′ = (<var>dx</var> + <var>ey</var> + <var>f</var>) / (<var>gx</var> + <var>hy</var> + 1)</p>
+    <p>Multiplying both sides by the denominator lets me rearrange each correspondence into two equations that are linear in a through h. I then stack the equations from all n point pairs into the system A h = b:</p>
+  </div>
+  <div class="eq-wrap">
+    <div class="eq">
+      <span class="mat c8">
+        <span><var>x</var><sub>1</sub></span><span><var>y</var><sub>1</sub></span><span>1</span><span>0</span><span>0</span><span>0</span><span>−<var>x</var><sub>1</sub><var>x</var>′<sub>1</sub></span><span>−<var>y</var><sub>1</sub><var>x</var>′<sub>1</sub></span>
+        <span>0</span><span>0</span><span>0</span><span><var>x</var><sub>1</sub></span><span><var>y</var><sub>1</sub></span><span>1</span><span>−<var>x</var><sub>1</sub><var>y</var>′<sub>1</sub></span><span>−<var>y</var><sub>1</sub><var>y</var>′<sub>1</sub></span>
+        <span class="vd">⋮</span>
+        <span><var>x</var><sub>n</sub></span><span><var>y</var><sub>n</sub></span><span>1</span><span>0</span><span>0</span><span>0</span><span>−<var>x</var><sub>n</sub><var>x</var>′<sub>n</sub></span><span>−<var>y</var><sub>n</sub><var>x</var>′<sub>n</sub></span>
+        <span>0</span><span>0</span><span>0</span><span><var>x</var><sub>n</sub></span><span><var>y</var><sub>n</sub></span><span>1</span><span>−<var>x</var><sub>n</sub><var>y</var>′<sub>n</sub></span><span>−<var>y</var><sub>n</sub><var>y</var>′<sub>n</sub></span>
+      </span>
+      <span class="mat c1"><span><var>a</var></span><span><var>b</var></span><span><var>c</var></span><span><var>d</var></span><span><var>e</var></span><span><var>f</var></span><span><var>g</var></span><span><var>h</var></span></span>
+      <span class="op">=</span>
+      <span class="mat c1"><span><var>x</var>′<sub>1</sub></span><span><var>y</var>′<sub>1</sub></span><span class="vd">⋮</span><span><var>x</var>′<sub>n</sub></span><span><var>y</var>′<sub>n</sub></span></span>
+    </div>
+  </div>
+  <div class="text">
+    <p>The resulting matrix A has dimensions 2n by 8. With 4 suitably placed points, there are just enough equations to solve for the homography. However, my clicks can be a few pixels away from the actual corresponding locations, so relying on only 4 points makes the result sensitive to those errors. I used 9 points per image pair, with 7 for the library. The larger sets give 18 equations for 8 unknowns, which I solve using least squares with <code>np.linalg.lstsq</code>.</p>
+  </div>
+  <div class="codes">
+    <figure>
+      <pre class="code"><code><span class="k">def</span> <span class="f">buildeqsystem</span>(p1, p2):
+    leftside, rightside = [], []
+    <span class="c"># I zip the two images, and use the required equation system:</span>
+    <span class="c"># xp * (gx + hy + 1) = ax + by + c</span>
+    <span class="c"># yp * (gx + hy + 1) = dx + ey + f</span>
+    <span class="c"># rearrange and make the matrix:</span>
+    <span class="c"># h = [abcdefgh] (constants matrix)</span>
+    <span class="c"># and the other matrix is [x, y, 1, 0, 0, 0, -x*xp, -y*xp] for first eq vars</span>
+    <span class="c"># the other matrix is [[0, 0, 0, x, y, 1, -x*xp, -y*xp]]</span>
+    <span class="c"># So each point we just loop and constribute to the each eq twice, return</span>
+    for (x, y), (xp, yp) in zip(p1, p2):
+        leftside.append([x, y, 1, 0, 0, 0, -x * xp, -y * xp]); rightside.append(xp)
+        leftside.append([0, 0, 0, x, y, 1, -x * yp, -y * yp]); rightside.append(yp)
+    return np.array(leftside), np.array(rightside)</code></pre>
+      <figcaption class="cap"><p class="cap-note">Each corresponding point pair contributes two rows to A and two values to b.</p></figcaption>
+    </figure>
+    <figure>
+      <pre class="code"><code><span class="k">def</span> <span class="f">computeH</span>(im1_pts, im2_pts):
+    A, b = buildeqsystem(im1_pts, im2_pts)
+    <span class="c"># the eq is AtA = Atb</span>
+    <span class="c"># sol is (AtA)^-1 At b</span>
+    <span class="c">#h = np.linalg.solve(A.T @ A, A.T @ b)</span>
+    h = np.linalg.lstsq(A, b, rcond=None)[0]
+    return np.append(h, 1).reshape(3, 3)
+
+<span class="k">def</span> <span class="f">apply_H</span>(H, pts):
+    n = len(pts)
+    ones = np.ones((n, 1))
+    <span class="c"># each row is x, y 1</span>
+    pts_h = np.hstack([pts, ones])
+    mapped = pts_h @ H.T
+    <span class="c"># get the scale</span>
+    w = mapped[:, 2:3]
+    <span class="c"># divide x y by the scale</span>
+    return mapped[:, :2] / w</code></pre>
+      <figcaption class="cap"><p class="cap-note">I solve for h using least squares and append the fixed 1 to construct H. The <code>apply_H</code> function then transforms the points and divides their coordinates by w.</p></figcaption>
+    </figure>
+  </div>
+
+  <h3>Correspondences</h3>
+  <div class="text">
+    <p>I selected the correspondences on the original photos and scaled their coordinates to match the 1200 px versions. Points with the same number identify the same location in the scene. I treat the reference as image 2, so each H maps the other photo into its coordinate system. This is the middle photo for the building and rooftop sets, and the right photo for the library.</p>
+  </div>
+  <div class="stack m">
+    <figure><img src="./media/pts_8893_8892.jpg" alt="Nine numbered points on IMG_8893 and the same points on IMG_8892" width="1800" height="1197" loading="lazy"><figcaption class="cap"><p class="cap-title">Glass building, left → middle</p><p class="cap-note">IMG_8893 → IMG_8892, 9 points.</p></figcaption></figure>
+    <figure><img src="./media/pts_8891_8892.jpg" alt="Nine numbered points on IMG_8891 and the same points on IMG_8892" width="1800" height="1192" loading="lazy"><figcaption class="cap"><p class="cap-title">Glass building, right → middle</p><p class="cap-note">IMG_8891 → IMG_8892, 9 points.</p></figcaption></figure>
+    <figure><img src="./media/pts_8903_8902.jpg" alt="Nine numbered points on IMG_8903 and the same points on IMG_8902" width="1800" height="1194" loading="lazy"><figcaption class="cap"><p class="cap-title">Rooftop, left → middle</p><p class="cap-note">IMG_8903 → IMG_8902, 9 points.</p></figcaption></figure>
+    <figure><img src="./media/pts_8901_8902.jpg" alt="Nine numbered points on IMG_8901 and the same points on IMG_8902" width="1800" height="1197" loading="lazy"><figcaption class="cap"><p class="cap-title">Rooftop, right → middle</p><p class="cap-note">IMG_8901 → IMG_8902, 9 points.</p></figcaption></figure>
+    <figure><img src="./media/pts_8919_8920.jpg" alt="Seven numbered points on IMG_8919 and the same points on IMG_8920" width="1800" height="1194" loading="lazy"><figcaption class="cap"><p class="cap-title">Library, left → right</p><p class="cap-note">IMG_8919 → IMG_8920, 7 points.</p></figcaption></figure>
+  </div>
+
+  <h3>The system, with numbers</h3>
+  <div class="text">
+    <p>For the mapping from IMG_8891 to IMG_8892, I show how the first two correspondences produce the first four rows of the system. The remaining 7 point pairs contribute another 14 rows in the same way.</p>
+  </div>
+  <div class="eq-wrap">
+    <div class="eq">
+      <span class="mat c8">
+        <span>452.94</span><span>1096.43</span><span>1</span><span>0</span><span>0</span><span>0</span><span>−323243.94</span><span>−782472.24</span>
+        <span>0</span><span>0</span><span>0</span><span>452.94</span><span>1096.43</span><span>1</span><span>−506894.46</span><span>−1227032.56</span>
+        <span>488.03</span><span>532.56</span><span>1</span><span>0</span><span>0</span><span>0</span><span>−356073.86</span><span>−388569.62</span>
+        <span>0</span><span>0</span><span>0</span><span>488.03</span><span>532.56</span><span>1</span><span>−257443.55</span><span>−280938.18</span>
+        <span class="vd">⋮</span>
+      </span>
+      <span class="mat c1"><span><var>a</var></span><span><var>b</var></span><span><var>c</var></span><span><var>d</var></span><span><var>e</var></span><span><var>f</var></span><span><var>g</var></span><span><var>h</var></span></span>
+      <span class="op">=</span>
+      <span class="mat c1"><span>713.66</span><span>1119.12</span><span>729.62</span><span>527.52</span><span class="vd">⋮</span></span>
+    </div>
+  </div>
+
+  <h3>Recovered homographies</h3>
+  <div class="hgrid">
+    <figure>
+      <span class="mat c3"><span>1.4072</span><span>−0.1615</span><span>−348.2916</span><span>0.4204</span><span>1.2551</span><span>−272.0155</span><span>4.846×10<sup>−4</sup></span><span>−3.676×10<sup>−6</sup></span><span>1</span></span>
+      <figcaption class="cap"><p class="cap-title">Glass, IMG_8893 → IMG_8892</p></figcaption>
+    </figure>
+    <figure>
+      <span class="mat c3"><span>0.7274</span><span>0.0219</span><span>255.2591</span><span>−0.2049</span><span>0.8862</span><span>77.5452</span><span>−2.889×10<sup>−4</sup></span><span>−1.483×10<sup>−5</sup></span><span>1</span></span>
+      <figcaption class="cap"><p class="cap-title">Glass, IMG_8891 → IMG_8892</p></figcaption>
+    </figure>
+    <figure>
+      <span class="mat c3"><span>1.2343</span><span>0.0037</span><span>−507.8454</span><span>0.1559</span><span>1.1517</span><span>−67.2489</span><span>2.783×10<sup>−4</sup></span><span>−2.073×10<sup>−5</sup></span><span>1</span></span>
+      <figcaption class="cap"><p class="cap-title">Rooftop, IMG_8903 → IMG_8902</p></figcaption>
+    </figure>
+    <figure>
+      <span class="mat c3"><span>0.7318</span><span>−0.0287</span><span>563.5070</span><span>−0.1466</span><span>0.9458</span><span>26.5216</span><span>−2.865×10<sup>−4</sup></span><span>−3.476×10<sup>−6</sup></span><span>1</span></span>
+      <figcaption class="cap"><p class="cap-title">Rooftop, IMG_8901 → IMG_8902</p></figcaption>
+    </figure>
+    <figure>
+      <span class="mat c3"><span>1.6706</span><span>−0.0064</span><span>−651.2261</span><span>0.4590</span><span>1.4149</span><span>−225.1553</span><span>7.771×10<sup>−4</sup></span><span>−5.847×10<sup>−5</sup></span><span>1</span></span>
+      <figcaption class="cap"><p class="cap-title">Library, IMG_8919 → IMG_8920</p></figcaption>
+    </figure>
+  </div>
+  <div class="text">
+    <p>I wanted to understand what these values meant beyond just using them to warp the images. The translation term c is negative for photos to the left of the reference and positive for photos to its right. The perspective term g also changes sign between the left and right photos. It appears in the denominator gx + hy + 1, which increases with x for a left photo and decreases with x for a right photo. This helps explain why the outer edge of each side photo stretches more than the edge closer to the reference, producing the bow-tie shape visible in A.4.</p>
+    <p>To check how well each H fits the correspondences, I transform the clicked points from image 1 and measure their distance from the matching points in image 2.</p>
+  </div>
+  <div class="table-wrap">
+    <table class="data">
+      <caption>The table reports the reprojection error of the selected correspondences in pixels, using the 900 by 1200 photos.</caption>
+      <thead>
+        <tr><th>Pair</th><th class="num">Points</th><th class="num">Equations</th><th class="num">Mean error</th><th class="num">Max error</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Glass, 8893 → 8892</td><td class="num">9</td><td class="num">18</td><td class="num">1.14 px</td><td class="num">2.16 px</td></tr>
+        <tr><td>Glass, 8891 → 8892</td><td class="num">9</td><td class="num">18</td><td class="num">1.02 px</td><td class="num">2.27 px</td></tr>
+        <tr><td>Rooftop, 8903 → 8902</td><td class="num">9</td><td class="num">18</td><td class="num">1.29 px</td><td class="num">2.25 px</td></tr>
+        <tr><td>Rooftop, 8901 → 8902</td><td class="num">9</td><td class="num">18</td><td class="num">1.53 px</td><td class="num">3.58 px</td></tr>
+        <tr><td>Library, 8919 → 8920</td><td class="num">7</td><td class="num">14</td><td class="num">1.79 px</td><td class="num">3.28 px</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="text">
+    <p>Every pair has a mean error below 2 px. This suggests that the recovered homographies fit the selected points well. Camera movement could introduce parallax, making it harder for a single H to align points at different depths. The library pair has the largest mean error. It also has the fewest correspondences and the strongest perspective term, with the largest magnitude of g.</p>
+  </div>
+</section>
+
+<!-- ============================ A.3 ============================ -->
+<section class="part" id="a3">
+  <p class="part-label">Part A.3</p>
+  <h2>Warping and rectification</h2>
+  <div class="text">
+    <p>I implemented inverse warping by starting with the output image. For each output pixel, I apply the inverse of H to find its location in the source image and read the color there. This gives every pixel within the warped image’s footprint a source location to sample. Forward warping works in the opposite direction, but pushing source pixels into the output can leave gaps between the locations where they land.</p>
+    <p>To determine the output dimensions, I transform the 4 image corners through H and use the minimum and maximum coordinates as the bounds. I also create an alpha mask with a value of 1 wherever the mapped point falls inside the source image and 0 elsewhere. This mask tells the blending procedure in A.4 which pixels are valid.</p>
+    <p>The mapped source coordinates usually fall between pixels. I implemented two methods for deciding which color to use at those locations.</p>
+    <p><strong>Nearest neighbor.</strong> I round x and y to the nearest pixel coordinates and copy the color from that location.</p>
+    <p><strong>Bilinear.</strong> I use the 4 pixels surrounding the source location and combine their colors based on the point’s position between them.</p>
+    <p>I implemented both interpolation methods directly with numpy indexing, without using <code>griddata</code> or <code>map_coordinates</code>.</p>
+  </div>
+
+  <h3>Rectification</h3>
+  <div class="text">
+    <p>Before building the mosaics, I tested the warping code on objects that I knew were rectangular. I selected their 4 corners in order: top left, top right, bottom right, and bottom left. I then matched these points to the corners of a rectangle in the output image. This uses the same <code>computeH</code> function with 4 correspondences, followed by warping. A successful result should make the object look as though I photographed it from directly in front.</p>
+    <p>For these examples, I already know the rectangle I want to produce, so I restrict the output to that region. Warping the entire tilted photo could create an extremely large output because points near the line mapped to infinity would end up very far away.</p>
+  </div>
+  <figure class="rect">
+    <figure><img src="./media/rect_8915_orig.jpg" alt="Laptop on a library table showing a smiley, with its four screen corners marked 0 to 3" width="520" height="693" loading="lazy"><figcaption>IMG_8915 with the 4 clicked corners</figcaption></figure>
+    <div class="side">
+      <figure><img src="./media/rect_8915_nn.jpg" alt="The laptop screen rectified with nearest neighbor" width="616" height="397" loading="lazy"><figcaption>Nearest neighbor</figcaption></figure>
+      <figure><img src="./media/rect_8915_bl.jpg" alt="The laptop screen rectified with bilinear interpolation" width="616" height="397" loading="lazy"><figcaption>Bilinear</figcaption></figure>
+    </div>
+    <figcaption class="cap"><p class="cap-note">I rectified the laptop screen into a 930 by 600 rectangle. The smiley returns to a circular shape after correcting the perspective.</p></figcaption>
+  </figure>
+  <figure class="rect">
+    <figure><img src="./media/rect_8916_orig.jpg" alt="Doe Reference Collection sign on a wooden panel, with its four corners marked 0 to 3" width="520" height="693" loading="lazy"><figcaption>IMG_8916 with the 4 clicked corners</figcaption></figure>
+    <div class="side">
+      <figure><img src="./media/rect_8916_nn.jpg" alt="The sign rectified with nearest neighbor" width="616" height="385" loading="lazy"><figcaption>Nearest neighbor</figcaption></figure>
+      <figure><img src="./media/rect_8916_bl.jpg" alt="The sign rectified with bilinear interpolation" width="616" height="385" loading="lazy"><figcaption>Bilinear</figcaption></figure>
+    </div>
+    <figcaption class="cap"><p class="cap-note">I mapped the library sign into a 640 by 400 rectangle, making the text horizontal and easier to read.</p></figcaption>
+  </figure>
+
+  <h3>Nearest neighbor vs. bilinear</h3>
+  <div class="text">
+    <p>The difference between the methods is difficult to see when viewing the complete images. To look more closely, I took 100 by 100 px crops of the outputs and displayed them without additional smoothing.</p>
+  </div>
+  <div class="zoom">
+    <figure><img src="./media/zoom_8915_nn.png" alt="Close-up of the smile edge with nearest neighbor, jagged steps" width="635" height="634" loading="lazy"><figcaption>Nearest neighbor</figcaption></figure>
+    <figure><img src="./media/zoom_8915_bl.png" alt="Close-up of the smile edge with bilinear, smooth curve" width="635" height="634" loading="lazy"><figcaption>Bilinear</figcaption></figure>
+  </div>
+  <div class="zoom">
+    <figure><img src="./media/zoom_8916_nn.png" alt="Close-up of the letter Z with nearest neighbor, jagged edges" width="635" height="634" loading="lazy"><figcaption>Nearest neighbor</figcaption></figure>
+    <figure><img src="./media/zoom_8916_bl.png" alt="Close-up of the letter Z with bilinear, smooth edges" width="635" height="634" loading="lazy"><figcaption>Bilinear</figcaption></figure>
+  </div>
+  <div class="text">
+    <p><strong>Quality.</strong> The smile and the letter Z show the difference most clearly. With nearest neighbor, each output pixel copies a single source pixel, which creates visible steps along the edges. Bilinear interpolation combines 4 neighboring pixels, making those edges smoother at the cost of some sharpness.</p>
+  </div>
+  <div class="table-wrap">
+    <table class="data">
+      <caption>I measured the time needed for each rectification in a single Colab run.</caption>
+      <thead>
+        <tr><th>Image</th><th class="num">Output</th><th class="num">Nearest neighbor</th><th class="num">Bilinear</th><th class="num">Bilinear / NN</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Laptop, IMG_8915</td><td class="num">930 × 600</td><td class="num">0.149 s</td><td class="num">0.369 s</td><td class="num">2.5×</td></tr>
+        <tr><td>Sign, IMG_8916</td><td class="num">640 × 400</td><td class="num">0.097 s</td><td class="num">0.140 s</td><td class="num">1.4×</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="text">
+    <p><strong>Speed.</strong> Bilinear interpolation requires 4 pixel lookups and 4 weights for each output pixel, while nearest neighbor needs only 1 lookup. This additional work made bilinear 1.4 to 2.5 times slower in these measurements. Both implementations use vectorized numpy operations and still finish in under half a second. A single run is not enough to establish a precise timing ratio, but the results are consistent with the extra computation bilinear requires.</p>
+    <p><strong>Trade-off.</strong> I would use nearest neighbor for a quick preview or when reducing computation matters more than the appearance of the edges. For these final images, the additional time for bilinear interpolation is small enough that I prefer its smoother results. I therefore used bilinear interpolation for every mosaic.</p>
+  </div>
+</section>
+
+<!-- ============================ A.4 ============================ -->
+<section class="part" id="a4">
+  <p class="part-label">Part A.4</p>
+  <h2>Blending into mosaics</h2>
+  <div class="text">
+    <p>I build each mosaic around a reference photo and warp the remaining images directly into its coordinate system. Once the images share the same frame, I can place them on a common canvas and combine their overlapping regions. I use the following procedure:</p>
+    <ol class="steps">
+      <li><strong>Warp.</strong> I transform each non-reference photo using its H and bilinear interpolation. I also pass the reference through the same function with the identity matrix. This gives me a consistent output for every image: its pixels, alpha mask, and offset.</li>
+      <li><strong>Canvas.</strong> I find the combined bounds of the warped images, starting at the smallest offset and extending to the largest corner coordinates. This lets me allocate the complete canvas before placing any image on it.</li>
+      <li><strong>Weights.</strong> I apply a distance transform to each image’s alpha mask to determine its blending weights. The weight reflects how far a pixel is from the nearest boundary, with 0 at the edge and larger values toward the interior.</li>
+      <li><strong>Average.</strong> I accumulate each image’s weighted colors and its weights on the canvas. Dividing the accumulated colors by the total weight gives the final pixel values.</li>
+    </ol>
+    <p>Simply placing one photo over another would make any difference in exposure or color visible at the boundary. The distance-based weights help make that transition gradual. As an image approaches its edge, its contribution falls to 0 and the overlapping image contributes more. Areas outside all of the images remain black.</p>
+  </div>
+
+  <h3>Glass building</h3>
+  <div class="srcs">
+    <figure><img src="./media/src_8893.jpg" alt="Source IMG_8893" width="434" height="577" loading="lazy"><figcaption><b>IMG_8893</b> · warped</figcaption></figure>
+    <figure><img src="./media/src_8892.jpg" alt="Source IMG_8892" width="434" height="577" loading="lazy"><figcaption><b>IMG_8892</b> · reference</figcaption></figure>
+    <figure><img src="./media/src_8891.jpg" alt="Source IMG_8891" width="434" height="577" loading="lazy"><figcaption><b>IMG_8891</b> · warped</figcaption></figure>
+  </div>
+  <figure class="mosaic sq"><img src="./media/mosaic_glass.jpg" alt="Mosaic of the curved glass building from three photos" width="1841" height="1598" loading="lazy"><figcaption class="cap"><p class="cap-note">The final mosaic is 1841 by 1598. I used the curved facade to check the alignment because its shape should continue across both image boundaries. The sunset reflection on the right comes entirely from IMG_8891 and blends into the rest of the building without an obvious seam.</p></figcaption></figure>
+
+  <h3>Rooftop at sunset</h3>
+  <div class="srcs">
+    <figure><img src="./media/src_8903.jpg" alt="Source IMG_8903" width="434" height="577" loading="lazy"><figcaption><b>IMG_8903</b> · warped</figcaption></figure>
+    <figure><img src="./media/src_8902.jpg" alt="Source IMG_8902" width="434" height="577" loading="lazy"><figcaption><b>IMG_8902</b> · reference</figcaption></figure>
+    <figure><img src="./media/src_8901.jpg" alt="Source IMG_8901" width="434" height="577" loading="lazy"><figcaption><b>IMG_8901</b> · warped</figcaption></figure>
+  </div>
+  <figure class="mosaic"><img src="./media/mosaic_roof.jpg" alt="Mosaic of the rooftop view at sunset from three photos" width="2164" height="1537" loading="lazy"><figcaption class="cap"><p class="cap-note">The final mosaic is 2164 by 1537. Since the right photo faces the sunset, the sky is noticeably more orange in that image. Blending turns this color difference into a gradual transition, while the roof edges, street, and tall building remain aligned across the overlaps.</p></figcaption></figure>
+
+  <h3>Library shelves</h3>
+  <div class="srcs two">
+    <figure><img src="./media/src_8919.jpg" alt="Source IMG_8919" width="434" height="577" loading="lazy"><figcaption><b>IMG_8919</b> · warped</figcaption></figure>
+    <figure><img src="./media/src_8920.jpg" alt="Source IMG_8920" width="434" height="577" loading="lazy"><figcaption><b>IMG_8920</b> · reference</figcaption></figure>
+  </div>
+  <figure class="mosaic tall"><img src="./media/mosaic_indoor.jpg" alt="Mosaic of library bookshelves from two photos" width="1609" height="1810" loading="lazy"><figcaption class="cap"><p class="cap-note">The final mosaic is 1609 by 1810 and combines two photos. IMG_8919 was taken at an angle, so rectifying its perspective stretches it into the long wedge visible on the left. The shelves and rows of books continue across the boundary without losing their alignment.</p></figcaption></figure>
+</section>
+
+<section class="coda" id="learned">
+  <p class="part-label">The most important thing I learned</p>
+  <p>As someone who is highly mathematical, I mostly focused on the Homography math. I learned about mapping points to different coordinate systems with matrixes. It is cool how we can represent a rotation and projection with our h matrix. Thus if we have x,y points, each one gives two equations added to the matrix eq. We get a linear system that we can solve analytically for the matrix, in my opinion that is really cool. I wonder if our brains learned some h matrix to align the images we see from each eye separately.</p>
+</section>
+
+<footer>
+  <p class="foot-nav"><a href="../index.html">All projects</a></p>
+  <p>All photos are my own.</p>
+</footer>
+
+</div>
+</body>
+</html>

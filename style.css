@@ -593,3 +593,130 @@ var { font-style: italic; }
 @media print {
   .p3 .pair.natural.l { max-width: none; }
 }
+
+/* ---- Project 4A: matrices, source rows, rectification, mosaics ----
+   The page also carries .p2 .p3 to reuse the styles above. */
+.eq-wrap { overflow-x: auto; margin: 1.75rem 0 0; }
+.eq {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem 0.8rem;
+  width: max-content;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.eq .op { font-size: 1.1rem; }
+.eq .lab { font-style: italic; }
+.mat {
+  position: relative;
+  display: inline-grid;
+  gap: 0.15rem 1.1rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  text-align: right;
+  white-space: nowrap;
+}
+.mat::before, .mat::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0.35rem;
+  border: 1px solid var(--ink);
+}
+.mat::before { left: 0; border-right: 0; }
+.mat::after { right: 0; border-left: 0; }
+.mat.c1 { grid-template-columns: auto; text-align: center; }
+.mat.c3 { grid-template-columns: repeat(3, auto); }
+.mat.c8 { grid-template-columns: repeat(8, auto); }
+.mat .vd { grid-column: 1 / -1; text-align: center; color: var(--muted); }
+.mat sup { font-size: 0.7em; line-height: 0; }
+
+.hgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  gap: 1.75rem 2rem;
+  margin: 2rem 0 0;
+}
+.hgrid .cap { margin-top: 0.5rem; }
+
+.srcs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  max-width: 46rem;
+  margin: 2rem 0 0;
+}
+.srcs.two { grid-template-columns: repeat(2, 1fr); max-width: 30.4rem; }
+.srcs figcaption, .rect figure figcaption, .zoom figcaption {
+  font-family: var(--display);
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.35rem;
+}
+.srcs figcaption b { font-weight: 500; color: var(--ink); }
+
+.rect {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  align-items: start;
+  max-width: 52rem;
+  margin: 2.25rem 0 0;
+}
+.rect .side { display: grid; gap: 0.75rem; }
+
+.zoom {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  max-width: 34rem;
+  margin: 1.5rem 0 0;
+}
+.zoom img { image-rendering: pixelated; }
+
+.p4 .mosaic { margin: 1.75rem 0 0; }
+.p4 .mosaic.sq { max-width: 56rem; }
+.p4 .mosaic.tall { max-width: 43rem; }
+.p4 .steps { margin: 0 0 1.1em; padding-left: 1.3rem; }
+.p4 .steps li { margin: 0 0 0.45em; }
+
+.p4 .eq-wrap + .text,
+.p4 .hgrid + .text,
+.p4 .rect + .text,
+.p4 .zoom + .text,
+.p4 .srcs + .text,
+.p4 .fig-l + .text { margin-top: 2.25rem; }
+
+@media (max-width: 760px) {
+  .rect { grid-template-columns: 1fr; max-width: 26rem; }
+  .srcs { gap: 0.5rem; }
+}
+@media print {
+  .eq-wrap, .hgrid, .srcs, .rect, .zoom, .p4 .mosaic, .p4 .fig-l { margin-top: 1.1rem; }
+  .eq-wrap { overflow: visible; }
+  .mat { font-size: 9pt; }
+  .hgrid > figure, .srcs, .rect, .zoom, .p4 .mosaic, .eq { break-inside: avoid; }
+  .hgrid { grid-template-columns: repeat(3, 1fr); gap: 1rem 1.25rem; }
+  .p4 .fig-l { max-width: 36rem; }
+  .p4 .mosaic.sq { max-width: 34rem; }
+  .p4 .mosaic.tall { max-width: 27rem; }
+  .p4 .mosaic { max-width: 44rem; }
+  .srcs { max-width: 30rem; }
+  .srcs.two { max-width: 19.8rem; }
+  .rect { max-width: 34rem; }
+  .zoom { max-width: 24rem; }
+  .p4 .eq-wrap + .text, .p4 .hgrid + .text, .p4 .rect + .text, .p4 .zoom + .text,
+  .p4 .srcs + .text, .p4 .fig-l + .text { margin-top: 1.1rem; }
+}
+.rect > .cap { grid-column: 1 / -1; margin-top: 0; }
+.rect + .rect { margin-top: 2.5rem; }
+@media print {
+  .rect + .rect { margin-top: 1.4rem; }
+}
+@media print {
+  .rect { grid-template-columns: 1fr 1fr; }
+  .p4 .stack.m { max-width: 32rem; gap: 0.9rem; }
+  .srcs { max-width: 25rem; }
+  .srcs.two { max-width: 16.5rem; }
+}
